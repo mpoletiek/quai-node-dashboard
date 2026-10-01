@@ -60,6 +60,7 @@ body[data-look="angel"] {
   --radius: 0;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -87,6 +88,8 @@ body[data-look="angel"] .brand .mark { font-size: 30px; letter-spacing: .02em; t
 .brand .jp { font: 300 12px var(--jp); color: var(--dim); letter-spacing: .3em; }
 .who { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--fg2); }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--panel-edge); font: 600 11px var(--label); letter-spacing: var(--label-track); text-transform: uppercase; color: var(--fg2); border-radius: var(--radius); white-space: nowrap; }
+a.chip { color: var(--acc); text-decoration: none; }
+a.chip:hover { border-color: var(--acc); }
 .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
 .chip.off .dot { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
 .chip.demo { color: var(--warn); border-color: var(--warn); }
@@ -213,7 +216,7 @@ body[data-look="angel"] .syncbig { font-family: var(--label); font-weight: 700; 
 
 /* ---------- Tape ---------- */
 #tapep { grid-area: tape; }
-#tape { width: 100%; height: 150px; display: block; }
+#tape { width: 100%; height: 210px; display: block; }
 .legend { display: flex; gap: 16px; font-size: 11px; color: var(--fg2); flex-wrap: wrap; }
 .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
 .readout { font-size: 12px; color: var(--fg2); min-height: 18px; margin-top: 6px; overflow-wrap: anywhere; }
@@ -276,6 +279,7 @@ body[data-look="angel"] .syncbig { font-family: var(--label); font-weight: 700; 
     <div class="who">
       <span class="chip" id="status"><span class="dot"></span><span id="statustext">CONNECTING</span></span>
       <span id="nodelabel">—</span><span id="nodeloc"></span>
+      <a class="chip" id="tuilink" href="tui.html" hidden>Terminal version →</a>
     </div>
     <div class="spacer"></div>
     <div class="looks" role="group" aria-label="Look">
@@ -347,10 +351,10 @@ body[data-look="angel"] .syncbig { font-family: var(--label); font-weight: 700; 
       <div class="syncsub" id="syncsub"></div>
     </section>
 
-    <section class="panel" id="tapep" aria-label="Recent blocks">
-      <div class="ph"><h2>Block tape</h2><span class="jp">記録</span>
-        <div class="legend aside"><span><i style="background:var(--tier-zone)"></i>zone</span><span><i style="background:var(--tier-region)"></i>region</span><span><i style="background:var(--tier-prime)"></i>prime</span><span>bar height = gas used · dots = workshares</span></div></div>
-      <canvas id="tape" aria-label="Recent blocks over time"></canvas>
+    <section class="panel" id="tapep" aria-label="Block lattice">
+      <div class="ph"><h2>Block lattice</h2><span class="jp">主鎖 · 領域 · 区界</span>
+        <div class="legend aside"><span>every block lands in its zone · a region block also extends the region chain · a prime block extends all three</span><span>node size = gas used · ticks = workshares</span></div></div>
+      <canvas id="tape" aria-label="Recent blocks by chain tier"></canvas>
       <div class="readout num" id="readout">Point at a block for details.</div>
     </section>
 
@@ -667,8 +671,10 @@ function onNewBlock(b) { pulse = performance.now(); pulseOrder = b.order; }
 function render(s, full) {
   const st = $("status");
   st.classList.toggle("off", !s.node.online);
-  st.classList.toggle("demo", !!demo);
-  $("statustext").textContent = demo ? "DEMO DATA" : s.node.online ? "LIVE" : "OFFLINE";
+  const isDemo = !!demo || s.node.rpc === "demo";
+  st.classList.toggle("demo", isDemo);
+  $("statustext").textContent = isDemo ? "DEMO DATA" : s.node.online ? "LIVE" : "OFFLINE";
+  $("tuilink").hidden = !demo;
   $("nodelabel").textContent = s.node.label;
   $("nodeloc").textContent = (s.node.location ? s.node.location + " · " : "") + (demo ? "simulated" : s.node.rpc);
   const zone = s.chains.zone;
@@ -980,37 +986,114 @@ function drawMap(now) {
 let tapeHover = -1, tapeLayout = [];
 $("tape").addEventListener("pointermove", (e) => {
   const r = $("tape").getBoundingClientRect(), x = e.clientX - r.left;
-  tapeHover = tapeLayout.findIndex((b) => x >= b.x - 2 && x <= b.x + b.w + 2);
-  const b = tapeLayout[tapeHover];
-  $("readout").textContent = b ? `#${fmtInt(b.b.number)} · ${["PRIME", "REGION", "ZONE"][b.b.order]} · ${b.b.txs} txs · ${b.b.etxs} etxs · ${b.b.workshares} workshares · gas ${(100 * b.b.gas_used / Math.max(1, b.b.gas_limit)).toFixed(1)}% · ${b.b.hash.slice(0, 18)}…` : "Point at a block for details.";
+  let best = -1, bd = 9;
+  tapeLayout.forEach((t, i) => { const d = Math.abs(t.x - x); if (d < bd) { bd = d; best = i; } });
+  tapeHover = best;
+  const t = tapeLayout[best], b = t && t.b;
+  $("readout").textContent = b
+    ? `zone #${fmtInt(b.number)}` + (b.order <= 1 ? ` · region #${fmtInt(b.region_number)}` : "") + (b.order === 0 ? ` · prime #${fmtInt(b.prime_number)}` : "") +
+      ` · ${b.txs} txs · ${b.etxs} etxs · ${b.workshares} workshares · gas ${(100 * b.gas_used / Math.max(1, b.gas_limit)).toFixed(1)}% · ${b.hash.slice(0, 18)}…`
+    : "Point at a block for details.";
 });
 $("tape").addEventListener("pointerleave", () => { tapeHover = -1; });
+// Three lanes, top to bottom: prime, region, zone. A block of order k
+// appears in every lane from k down to zone, joined by a vertical link;
+// each lane is chained to its own previous block.
 function drawTape(now) {
   const { ctx, w, h } = sizeCanvas($("tape"));
   ctx.clearRect(0, 0, w, h);
   const s = lastState; if (!s || !s.blocks.length) return;
+  const angel = look === "angel";
   const bs = s.blocks, nowS = s.now_ms / 1000 + (performance.now() - pollAt) / 1000;
+  const gutter = 74, right = 10;
   const span = Math.max(240, nowS - bs[0].timestamp + 5), x0 = nowS - span;
-  const X = (ts) => ((ts - x0) / span) * (w - 10) + 2;
-  const base = h - 18, top = 16, col = [css("--tier-prime"), css("--tier-region"), css("--tier-zone")];
-  ctx.strokeStyle = hexA(css("--acc"), 0.12); ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) { const y = top + ((base - top) * i) / 4; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-  ctx.fillStyle = css("--dim"); ctx.font = `10px ${css("--mono")}`;
-  for (let m = 0; m <= span; m += 60) { const x = X(nowS - m); ctx.fillText(m ? "-" + m / 60 + "m" : "now", Math.max(0, x - 12), h - 4); }
-  const bw = Math.max(3, Math.min(10, (w / (span / 5)) * 0.55));
-  tapeLayout = [];
-  bs.forEach((b, i) => {
-    const x = X(b.timestamp) - bw / 2;
-    const f = Math.max(0.06, b.gas_used / Math.max(1, b.gas_limit));
-    const bh = (base - top) * Math.min(1, 0.08 + f * 2.2);
-    const fresh = i === bs.length - 1 ? Math.max(0, 1 - (now - pulse) / 900) : 0;
-    ctx.fillStyle = hexA(col[b.order] || col[2], i === tapeHover ? 1 : 0.75);
-    ctx.fillRect(x, base - bh, bw, bh);
-    if (fresh > 0) { ctx.fillStyle = hexA("#ffffff", fresh * 0.8); ctx.fillRect(x - 2, top - 6, bw + 4, base - top + 6); }
-    ctx.fillStyle = hexA(col[2], 0.8);
-    for (let k = 0; k < Math.min(b.workshares, 12); k++) ctx.fillRect(x + bw / 2 - 1, base - bh - 5 - k * 4, 2, 2);
-    tapeLayout.push({ x, w: bw, b });
+  const X = (ts) => gutter + ((ts - x0) / span) * (w - gutter - right);
+  const laneY = [h * 0.16, h * 0.43, h * 0.70];
+  const names = ["PRIME", "REGION", "ZONE"], jp = ["主鎖", "領域", "区界"];
+  const col = [css("--tier-prime"), css("--tier-region"), css("--tier-zone")];
+  const acc = css("--acc"), dim = css("--dim");
+  // lanes
+  for (let k = 0; k < 3; k++) {
+    const y = laneY[k];
+    if (angel) { ctx.fillStyle = hexA(col[k], 0.06); ctx.fillRect(gutter, y - 14, w - gutter - right, 28); }
+    ctx.strokeStyle = hexA(col[k], angel ? 0.35 : 0.22); ctx.lineWidth = 1;
+    ctx.setLineDash(angel ? [] : [2, 5]); ctx.beginPath(); ctx.moveTo(gutter, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col[k]; ctx.font = `600 12px ${css("--label")}`; ctx.textBaseline = "middle";
+    ctx.fillText(names[k], 6, y - 6);
+    ctx.fillStyle = dim; ctx.font = `300 10px ${css("--jp")}`; ctx.fillText(jp[k], 6, y + 8);
+  }
+  ctx.textBaseline = "alphabetic";
+  // time axis
+  ctx.fillStyle = dim; ctx.font = `10px ${css("--mono")}`;
+  for (let m = 0; m <= span; m += 60) { const x = X(nowS - m); if (x > gutter - 2) ctx.fillText(m ? "-" + m / 60 + "m" : "now", Math.min(w - 26, x - 10), h - 4); }
+  // layout
+  tapeLayout = bs.map((b) => ({ x: X(b.timestamp), b }));
+  const newest = tapeLayout[tapeLayout.length - 1];
+  const fresh = newest ? Math.max(0, 1 - (now - pulse) / 1100) : 0;
+  // chain links per lane
+  for (let k = 0; k < 3; k++) {
+    let prev = null;
+    ctx.strokeStyle = hexA(col[k], k === 2 ? 0.28 : 0.6); ctx.lineWidth = k === 2 ? 1 : 1.6;
+    for (const t of tapeLayout) {
+      if (t.b.order > k || t.x < gutter) continue;
+      if (prev) {
+        ctx.beginPath();
+        if (angel || k === 2) { ctx.moveTo(prev, laneY[k]); ctx.lineTo(t.x, laneY[k]); }
+        else { const mid = (prev + t.x) / 2; ctx.moveTo(prev, laneY[k]); ctx.quadraticCurveTo(mid, laneY[k] - 9, t.x, laneY[k]); }
+        ctx.stroke();
+      }
+      prev = t.x;
+    }
+  }
+  // vertical links and nodes
+  tapeLayout.forEach((t, i) => {
+    const { x, b } = t;
+    if (x < gutter) return;
+    const hover = i === tapeHover, top = laneY[Math.min(2, b.order)];
+    if (b.order < 2) {
+      const g = ctx.createLinearGradient(0, top, 0, laneY[2]);
+      g.addColorStop(0, hexA(col[b.order], hover ? 1 : 0.75)); g.addColorStop(1, hexA(col[2], hover ? 0.9 : 0.35));
+      ctx.strokeStyle = g; ctx.lineWidth = hover ? 2 : 1.2;
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, laneY[2]); ctx.stroke();
+    }
+    // zone node: size by gas used, workshare ticks beneath
+    const gas = b.gas_used / Math.max(1, b.gas_limit), r = 2.5 + Math.min(1, gas * 3) * 4;
+    ctx.fillStyle = hexA(col[2], hover ? 1 : 0.85);
+    if (angel) ctx.fillRect(x - r, laneY[2] - r, r * 2, r * 2); else { ctx.beginPath(); ctx.arc(x, laneY[2], r, 0, 7); ctx.fill(); }
+    ctx.fillStyle = hexA(col[2], 0.6);
+    for (let k = 0; k < Math.min(b.workshares, 14); k++) ctx.fillRect(x - 0.5, laneY[2] + r + 4 + k * 3, 1.5, 1.5);
+    // region / prime nodes
+    for (let k = b.order; k < 2; k++) {
+      const y = laneY[k], R = k === 0 ? 6.5 : 5;
+      ctx.fillStyle = col[k];
+      if (!angel) { ctx.shadowColor = col[k]; ctx.shadowBlur = hover ? 16 : 8; }
+      ctx.beginPath(); ctx.moveTo(x, y - R); ctx.lineTo(x + R, y); ctx.lineTo(x, y + R); ctx.lineTo(x - R, y); ctx.closePath(); ctx.fill();
+      ctx.shadowBlur = 0;
+      if (angel && k === 0) { ctx.strokeStyle = col[0]; ctx.lineWidth = 1; ctx.strokeRect(x - 11, y - 11, 22, 22); }
+    }
   });
+  // tier numbers, thinned so labels don't collide
+  ctx.font = `10px ${css("--mono")}`;
+  for (let k = 0; k < 2; k++) {
+    let lastX = -1e9;
+    for (let i = tapeLayout.length - 1; i >= 0; i--) {
+      const { x, b } = tapeLayout[i];
+      if (b.order > k || x < gutter + 30) continue;
+      if (lastX - x < 78) continue;
+      lastX = x;
+      ctx.fillStyle = hexA(col[k], 0.9);
+      ctx.fillText(fmtInt(k === 0 ? b.prime_number : b.region_number), x - 26, laneY[k] - 11);
+    }
+  }
+  // the newest block rises through its tiers
+  if (newest && fresh > 0 && newest.x >= gutter) {
+    const k = Math.min(2, newest.b.order), u = 1 - fresh, yTop = laneY[2] - (laneY[2] - laneY[k]) * Math.min(1, u * 1.6);
+    const c = col[k];
+    ctx.strokeStyle = hexA(c, fresh); ctx.lineWidth = 3; if (!angel) { ctx.shadowColor = c; ctx.shadowBlur = 18; }
+    ctx.beginPath(); ctx.moveTo(newest.x, laneY[2] + 8); ctx.lineTo(newest.x, yTop); ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = hexA(c, fresh * 0.8); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(newest.x, yTop, 6 + u * 18, 0, 7); ctx.stroke();
+  }
 }
 
 // ---------------------------------------------------------------- loop

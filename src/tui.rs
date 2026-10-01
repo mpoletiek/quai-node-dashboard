@@ -142,6 +142,27 @@ impl App {
         }
     }
 
+    /// Applies a key; true means quit.
+    fn key(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Char('q') | KeyCode::Esc => {
+                if self.help {
+                    self.help = false;
+                } else {
+                    return true;
+                }
+            }
+            KeyCode::Char('t') => {
+                self.theme = if self.theme == Theme::Ghost { Theme::Angel } else { Theme::Ghost };
+            }
+            KeyCode::Char('l') => self.view = if self.view == View::Logs { View::Dash } else { View::Logs },
+            KeyCode::Char('m') => self.view = if self.view == View::Map { View::Dash } else { View::Map },
+            KeyCode::Char('?') | KeyCode::Char('h') => self.help = !self.help,
+            _ => {}
+        }
+        false
+    }
+
     fn rand(&self, salt: u64) -> u64 {
         let mut x = self.tick.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ salt.wrapping_mul(0xBF58_476D_1CE4_E5B9);
         x ^= x >> 31;
@@ -171,28 +192,147 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, state: &Arc<Mutex<State>>
         terminal.draw(|f| draw(f, &app, &snap)).map_err(|e| e.to_string())?;
         if event::poll(FRAME).map_err(|e| e.to_string())? {
             if let Event::Key(k) = event::read().map_err(|e| e.to_string())? {
-                if k.kind == KeyEventKind::Press {
-                    match k.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            if app.help {
-                                app.help = false;
-                            } else {
-                                return Ok(());
-                            }
-                        }
-                        KeyCode::Char('t') => {
-                            app.theme = if app.theme == Theme::Ghost { Theme::Angel } else { Theme::Ghost };
-                        }
-                        KeyCode::Char('l') => app.view = if app.view == View::Logs { View::Dash } else { View::Logs },
-                        KeyCode::Char('m') => app.view = if app.view == View::Map { View::Dash } else { View::Map },
-                        KeyCode::Char('?') | KeyCode::Char('h') => app.help = !app.help,
-                        _ => {}
-                    }
+                if k.kind == KeyEventKind::Press && app.key(k.code) {
+                    return Ok(());
                 }
             }
         }
         app.tick += 1;
     }
+}
+
+// ---------------------------------------------------------------- recording
+
+fn hex_color(c: Color, default: &str) -> String {
+    let named = |s: &str| s.to_string();
+    match c {
+        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+        Color::Reset => named(default),
+        Color::Black => named("#000000"),
+        Color::Red => named("#cd3131"),
+        Color::Green => named("#0dbc79"),
+        Color::Yellow => named("#e5e510"),
+        Color::Blue => named("#2472c8"),
+        Color::Magenta => named("#bc3fbc"),
+        Color::Cyan => named("#11a8cd"),
+        Color::Gray => named("#a0a0a0"),
+        Color::DarkGray => named("#666666"),
+        Color::LightRed => named("#f14c4c"),
+        Color::LightGreen => named("#23d18b"),
+        Color::LightYellow => named("#f5f543"),
+        Color::LightBlue => named("#3b8eea"),
+        Color::LightMagenta => named("#d670d6"),
+        Color::LightCyan => named("#29b8db"),
+        Color::White => named("#e5e5e5"),
+        Color::Indexed(i) => format!("#{0:02x}{0:02x}{0:02x}", i),
+    }
+}
+
+/// East Asian wide characters occupy two cells.
+fn wide(c: char) -> bool {
+    matches!(c as u32, 0x1100..=0x115F | 0x2E80..=0xA4CF | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6)
+}
+
+/// Renders `seconds` of the dashboard at `fps` into an off-screen buffer,
+/// pressing `script` keys at the given seconds, and returns the frames as
+/// JSON: a style table and, per frame, runs `[y, x, style, text]` of the
+/// cells that changed (the first frame is complete).
+pub fn record(
+    state: &Arc<Mutex<State>>,
+    theme: Theme,
+    (w, h): (u16, u16),
+    fps: u64,
+    seconds: u64,
+    script: &[(f64, char, &str)],
+) -> Result<serde_json::Value, String> {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    let mut term = Terminal::new(TestBackend::new(w, h)).map_err(|e| e.to_string())?;
+    let mut app = App::new(theme);
+    let mut styles: Vec<String> = Vec::new();
+    let mut style_ix = std::collections::HashMap::new();
+    let mut prev: Option<ratatui::buffer::Buffer> = None;
+    let mut frames = Vec::new();
+    let mut captions = Vec::new();
+    let mut next_key = 0usize;
+    // Ticks advance at the live rate (83 ms) while frames are kept at `fps`.
+    let total_ticks = seconds * 1000 / FRAME.as_millis() as u64;
+    let every = (1000 / fps.max(1)).max(FRAME.as_millis() as u64) / FRAME.as_millis() as u64;
+    for t in 0..total_ticks {
+        let at = t as f64 * FRAME.as_secs_f64();
+        while let Some(&(when, key, caption)) = script.get(next_key) {
+            if when > at {
+                break;
+            }
+            app.key(KeyCode::Char(key));
+            captions.push(serde_json::json!([frames.len(), key.to_string(), caption]));
+            next_key += 1;
+        }
+        let snap = state.lock().map(|s| s.clone()).map_err(|_| "state lock poisoned".to_string())?;
+        app.observe(&snap);
+        term.draw(|f| draw(f, &app, &snap)).map_err(|e| e.to_string())?;
+        if t % every.max(1) == 0 {
+            let buf = term.backend().buffer().clone();
+            let mut runs: Vec<serde_json::Value> = Vec::new();
+            for y in 0..h {
+                let mut x = 0u16;
+                while x < w {
+                    let changed = |xx: u16| prev.as_ref().is_none_or(|p| p.cell((xx, y)) != buf.cell((xx, y)));
+                    if !changed(x) {
+                        x += 1;
+                        continue;
+                    }
+                    let Some(c0) = buf.cell((x, y)) else { break };
+                    let st = c0.style();
+                    let mut flags = 0u8;
+                    let m = st.add_modifier;
+                    if m.contains(Modifier::BOLD) { flags |= 1; }
+                    if m.contains(Modifier::DIM) { flags |= 2; }
+                    if m.contains(Modifier::ITALIC) { flags |= 4; }
+                    if m.contains(Modifier::REVERSED) { flags |= 8; }
+                    if m.contains(Modifier::UNDERLINED) { flags |= 16; }
+                    let key = format!("{}|{}|{flags}", hex_color(st.fg.unwrap_or(Color::Reset), "#d0d0d0"), hex_color(st.bg.unwrap_or(Color::Reset), "#000000"));
+                    let ix = *style_ix.entry(key.clone()).or_insert_with(|| {
+                        styles.push(key);
+                        styles.len() - 1
+                    });
+                    let x0 = x;
+                    let mut text = String::new();
+                    while x < w {
+                        let Some(c) = buf.cell((x, y)) else { break };
+                        if c.style() != st || !changed(x) {
+                            break;
+                        }
+                        let sym = c.symbol();
+                        let sym = if sym.is_empty() { " " } else { sym };
+                        text.push_str(sym);
+                        x += if sym.chars().next().is_some_and(wide) { 2 } else { 1 };
+                    }
+                    if x == x0 {
+                        x += 1;
+                        continue;
+                    }
+                    runs.push(serde_json::json!([y, x0, ix, text]));
+                }
+            }
+            frames.push(serde_json::Value::Array(runs));
+            prev = Some(buf);
+        }
+        app.tick += 1;
+        std::thread::sleep(FRAME);
+    }
+    let styles: Vec<serde_json::Value> = styles
+        .iter()
+        .map(|k| {
+            let mut it = k.split('|');
+            let fg = it.next().unwrap_or("#d0d0d0");
+            let bg = it.next().unwrap_or("#000000");
+            let fl: u8 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+            serde_json::json!([fg, bg, fl])
+        })
+        .collect();
+    let ms = FRAME.as_millis() as u64 * every.max(1);
+    Ok(serde_json::json!({"w": w, "h": h, "frame_ms": ms, "styles": styles, "frames": frames, "captions": captions}))
 }
 
 // ---------------------------------------------------------------- format
@@ -435,7 +575,7 @@ fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
         draw_logs(f, app, s, inner);
         return;
     }
-    let tape_h = if area.height >= 40 { 6 } else { 0 };
+    let tape_h = if area.height >= 41 { 7 } else { 0 };
     let [top, mid, tape, bottom] = Layout::vertical([
         Constraint::Length(11),
         Constraint::Length(12),
@@ -461,7 +601,7 @@ fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
     draw_map(f, app, s, inner);
 
     if tape_h > 0 {
-        let inner = panel(f, tape, app, "BLOCK TAPE", "記帳");
+        let inner = panel(f, tape, app, "BLOCK LATTICE", "階層");
         draw_tape(f, app, s, inner);
     }
     let [events, logs] = Layout::horizontal([Constraint::Percentage(38), Constraint::Percentage(62)]).areas(bottom);
@@ -833,47 +973,82 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
     f.render_widget(Paragraph::new(Line::styled(caption, Style::new().fg(p.dim))).alignment(Alignment::Right), cap_area);
 }
 
+/// The block lattice: prime, region and zone lanes (rows 0, 2, 4). A block
+/// of order k appears in every lane from k down to the zone, joined by `│`;
+/// each lane is chained to its own previous block with `─`.
 fn draw_tape(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
-    if area.height < 2 || area.width < 4 {
+    const GUTTER: u16 = 7;
+    if area.height < 5 || area.width < GUTTER + 6 {
         return;
     }
-    let slots = (area.width / 2) as usize;
-    let blocks: Vec<_> = s.blocks.iter().rev().take(slots).collect::<Vec<_>>().into_iter().rev().collect();
-    let bar_h = area.height.saturating_sub(1) as f64;
-    let max_tx = blocks.iter().map(|b| b.txs.max(b.workshares)).max().unwrap_or(1).max(1) as f64;
-    const EIGHTHS: [&str; 9] = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+    let tier = [p.alert, p.purple, p.fg];
+    let lane = |k: usize| area.y + (k as u16) * 2;
+    let ghost = app.theme == Theme::Ghost;
     let buf = f.buffer_mut();
+    for (k, name) in ["PRIME", "REGION", "ZONE"].iter().enumerate() {
+        buf.set_string(area.x, lane(k), name, Style::new().fg(tier[k]).add_modifier(Modifier::BOLD));
+    }
+    let slots = ((area.width - GUTTER) / 2) as usize;
+    let blocks: Vec<_> = s.blocks.iter().rev().take(slots).collect::<Vec<_>>().into_iter().rev().collect();
     let pad = (slots - blocks.len()) as u16 * 2;
-    for (i, b) in blocks.iter().enumerate() {
-        let x = area.x + pad + (i as u16) * 2;
-        let fill = if b.gas_limit > 0 && b.gas_used > 0 {
-            b.gas_used as f64 / b.gas_limit as f64
-        } else {
-            b.txs.max(b.workshares) as f64 / max_tx
-        };
-        let eighths = ((fill.clamp(0.04, 1.0) * bar_h * 8.0).round()) as usize;
-        let color = match b.order {
-            0 => p.alert,
-            1 => p.purple,
-            _ if i + 1 == blocks.len() => p.warn,
-            _ => p.fg,
-        };
-        for row in 0..bar_h as usize {
-            let lvl = eighths.saturating_sub(row * 8).min(8);
-            let y = area.y + area.height - 2 - row as u16;
-            if let Some(c) = buf.cell_mut((x, y)) {
-                c.set_symbol(EIGHTHS[lvl]).set_fg(color);
+    let x_of = |i: usize| area.x + GUTTER + pad + (i as u16) * 2;
+    let fresh = app.tick.saturating_sub(app.zone_changed) < 10;
+    // Chain links first, nodes over them.
+    for k in 0..3usize {
+        let mut prev: Option<u16> = None;
+        for (i, b) in blocks.iter().enumerate() {
+            if usize::from(b.order) > k {
+                continue;
             }
-        }
-        // Workshare count under each bar.
-        let y = area.y + area.height - 1;
-        let label = if b.order == 0 { "P".into() } else if b.order == 1 { "R".into() } else { (b.workshares % 10).to_string() };
-        if let Some(c) = buf.cell_mut((x, y)) {
-            c.set_symbol(&label).set_fg(if b.order < 2 { color } else { p.dim });
+            let x = x_of(i);
+            if let Some(px) = prev {
+                for xx in px + 1..x {
+                    if let Some(c) = buf.cell_mut((xx, lane(k))) {
+                        c.set_symbol("─").set_fg(if k == 2 { p.dim } else { tier[k] });
+                    }
+                }
+            }
+            prev = Some(x);
         }
     }
-    let _ = app;
+    for (i, b) in blocks.iter().enumerate() {
+        let x = x_of(i);
+        let newest = i + 1 == blocks.len();
+        let top = usize::from(b.order.min(2));
+        // Vertical link from the zone up to the block's highest tier.
+        for row in (lane(top) + 1)..lane(2) {
+            if row != lane(1) {
+                if let Some(c) = buf.cell_mut((x, row)) {
+                    c.set_symbol("│").set_fg(tier[top]);
+                }
+            }
+        }
+        for k in top..3 {
+            let sym = match (k, ghost) {
+                (0, true) => "◈",
+                (0, false) => "▣",
+                (1, _) => "◆",
+                (_, true) => "●",
+                _ => "■",
+            };
+            let color = if newest && fresh { p.warn } else { tier[k] };
+            if let Some(c) = buf.cell_mut((x, lane(k))) {
+                c.set_symbol(sym).set_fg(color);
+                if newest && fresh {
+                    c.set_style(Style::new().fg(color).add_modifier(Modifier::BOLD));
+                }
+            }
+        }
+    }
+    // Latest prime and region numbers at the right end of their lanes.
+    for (k, num) in [(0usize, blocks.iter().rev().find(|b| b.order == 0).map(|b| b.prime_number)), (1, blocks.iter().rev().find(|b| b.order <= 1).map(|b| b.region_number))] {
+        if let Some(n) = num {
+            let label = format!(" {} ", thousands(n));
+            let x = area.x + area.width.saturating_sub(label.chars().count() as u16);
+            buf.set_string(x, lane(k), &label, Style::new().fg(tier[k]).bg(p.bg));
+        }
+    }
 }
 
 fn draw_events(f: &mut Frame, app: &App, s: &State, area: Rect) {
@@ -1152,7 +1327,7 @@ mod tests {
     #[test]
     fn renders_both_themes() {
         let g = render(Theme::Ghost, 160, 48, View::Dash);
-        for want in ["QUAI//DIVE", "RS-QUAI SOAK", "Cyprus-1", "HIERARCHY", "MERGED MINING", "243.69 GH/s", "256.00 PH/s", "PEER MAP", "NODE LOG", "network peers=85", "100.0%", "BLOCK TAPE"] {
+        for want in ["QUAI//DIVE", "RS-QUAI SOAK", "Cyprus-1", "HIERARCHY", "MERGED MINING", "243.69 GH/s", "256.00 PH/s", "PEER MAP", "NODE LOG", "network peers=85", "100.0%", "BLOCK LATTICE"] {
             assert!(g.contains(want), "GHOST frame lacks {want:?}\n{g}");
         }
         let a = render(Theme::Angel, 160, 48, View::Dash);

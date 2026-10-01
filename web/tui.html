@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quai Dive Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Chakra+Petch:wght@500;600&display=swap">
+<style>
+:root { color-scheme: dark; --bg: #05080b; --fg: #cfe7e4; --dim: #5f7f7b; --acc: #5ef6e0; --edge: #1b2a2e; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: radial-gradient(ellipse at 50% 20%, #0b1b20 0%, var(--bg) 60%); color: var(--fg); font: 14px/1.5 "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
+.wrap { padding-inline: 16px; padding-block: 18px 28px; max-width: 1500px; margin: 0 auto; display: grid; gap: 14px; }
+header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+h1 { margin: 0; font: 600 20px "Chakra Petch", "Segoe UI", sans-serif; letter-spacing: .14em; color: var(--acc); }
+header p { margin: 0; color: var(--dim); font-size: 12px; max-width: 70ch; }
+header a { color: var(--acc); }
+.term { border: 1px solid var(--edge); border-radius: 10px; overflow: hidden; background: #000; box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(94,246,224,.05); }
+.bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #11171a; border-bottom: 1px solid var(--edge); font-size: 12px; color: var(--dim); }
+.bar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.bar .t { flex: 1; text-align: center; }
+.screen { position: relative; overflow-x: auto; }
+canvas { display: block; }
+.cap { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(0,0,0,.82); border: 1px solid var(--acc); color: var(--fg); padding: 8px 14px; border-radius: 6px; font-size: 14px; white-space: nowrap; transition: opacity .3s; }
+.cap kbd { display: inline-block; min-width: 1.6em; text-align: center; border: 1px solid var(--acc); border-radius: 4px; padding: 0 6px; margin-right: 8px; color: var(--acc); font: 700 13px inherit; }
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+button { background: transparent; color: var(--fg); border: 1px solid var(--edge); border-radius: 6px; padding: 5px 12px; font: 12px inherit; cursor: pointer; }
+button:hover { border-color: var(--acc); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+input[type=range] { flex: 1; min-width: 160px; accent-color: var(--acc); }
+.note { color: var(--dim); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .cap { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>QUAI DIVE · TERMINAL</h1>
+    <p>A recording of <code>quai-dash tui</code> on demo data: the GHOST look, the peer map, a switch to ANGEL, the full log and help, and back. Every frame is the real terminal renderer's output, replayed cell by cell. <a href="./">Web dashboard</a></p>
+  </header>
+  <div class="term">
+    <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="t" id="title">quai-dash tui --demo · 150×46</span><span id="clock" class="num">0.0 s</span></div>
+    <div class="screen"><canvas id="cv" aria-label="Terminal recording"></canvas><div class="cap" id="cap" style="opacity:0"></div></div>
+  </div>
+  <div class="controls">
+    <button type="button" id="play">Pause</button>
+    <button type="button" id="restart">Restart</button>
+    <button type="button" id="speed">Speed 1×</button>
+    <input type="range" id="seek" min="0" max="0" value="0" aria-label="Position">
+    <span id="pos">0 / 0</span>
+  </div>
+  <p class="note" id="note">Loading the recording…</p>
+</div>
+<script>
+"use strict";
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+let rec = null, grid = null, frame = 0, playing = true, speed = 1, acc = 0, last = 0, capUntil = 0;
+const FONT = '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+let CW = 9, CH = 18, FS = 15;
+const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
+function layout() {
+  const avail = Math.min(document.querySelector(".wrap").clientWidth - 2, 1460);
+  FS = Math.max(8, Math.min(15, Math.floor(avail / rec.w / 0.6)));
+  ctx.font = `${FS}px ${FONT}`;
+  CW = Math.ceil(ctx.measureText("M").width * 100) / 100; CH = Math.round(FS * 1.2);
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = Math.round(rec.w * CW * dpr); cv.height = Math.round(rec.h * CH * dpr);
+  cv.style.width = rec.w * CW + "px"; cv.style.height = rec.h * CH + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.textBaseline = "middle";
+  redraw();
+}
+function paint(y, x, style, text) {
+  const [fg0, bg0, fl] = rec.styles[style];
+  const fg = fl & 8 ? bg0 : fg0, bg = fl & 8 ? fg0 : bg0;
+  ctx.font = `${fl & 1 ? "700 " : ""}${fl & 4 ? "italic " : ""}${FS}px ${FONT}`;
+  let cx = x;
+  for (const ch of text) {
+    const w = WIDE.test(ch) ? 2 : 1;
+    ctx.fillStyle = bg; ctx.fillRect(cx * CW, y * CH, w * CW + 0.5, CH + 0.5);
+    if (ch !== " ") {
+      ctx.fillStyle = fg; ctx.globalAlpha = fl & 2 ? 0.6 : 1;
+      ctx.fillText(ch, cx * CW, y * CH + CH / 2 + 1, w * CW);
+      ctx.globalAlpha = 1;
+      if (fl & 16) ctx.fillRect(cx * CW, (y + 1) * CH - 2, w * CW, 1);
+    }
+    cx += w;
+  }
+}
+function apply(i) { for (const [y, x, s, t] of rec.frames[i]) paint(y, x, s, t); }
+function redraw() { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, rec.w * CW, rec.h * CH); for (let i = 0; i <= frame; i++) apply(i); }
+function seek(i) { frame = Math.max(0, Math.min(rec.frames.length - 1, i)); redraw(); ui(); }
+function ui() {
+  document.getElementById("seek").value = frame;
+  document.getElementById("pos").textContent = `${frame + 1} / ${rec.frames.length}`;
+  document.getElementById("clock").textContent = ((frame * rec.frame_ms) / 1000).toFixed(1) + " s";
+}
+function caption(i) {
+  const c = rec.captions.find((c) => c[0] === i);
+  if (!c) return;
+  const el = document.getElementById("cap");
+  el.innerHTML = `<kbd>${c[1]}</kbd>${c[2].replace(/^\S+\s+/, "")}`;
+  el.style.opacity = 1; capUntil = performance.now() + 2600;
+}
+function tick(now) {
+  if (rec && playing) {
+    acc += (now - last) * speed;
+    while (acc >= rec.frame_ms) {
+      acc -= rec.frame_ms;
+      if (frame + 1 >= rec.frames.length) { frame = 0; redraw(); }
+      else { frame++; apply(frame); caption(frame); }
+    }
+    ui();
+  }
+  if (capUntil && now > capUntil) { document.getElementById("cap").style.opacity = 0; capUntil = 0; }
+  last = now;
+  requestAnimationFrame(tick);
+}
+document.getElementById("play").onclick = (e) => { playing = !playing; e.target.textContent = playing ? "Pause" : "Play"; };
+document.getElementById("restart").onclick = () => seek(0);
+document.getElementById("speed").onclick = (e) => { speed = speed === 1 ? 2 : speed === 2 ? 0.5 : 1; e.target.textContent = `Speed ${speed}×`; };
+document.getElementById("seek").oninput = (e) => seek(Number(e.target.value));
+addEventListener("resize", () => rec && layout());
+fetch("tui-tour.json").then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then((d) => {
+  rec = d;
+  document.getElementById("seek").max = rec.frames.length - 1;
+  document.getElementById("note").textContent = `${rec.frames.length} frames at ${Math.round(1000 / rec.frame_ms)} fps · keys pressed during the tour appear at the bottom. Record your own with quai-dash record --out tour.json.`;
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { layout(); last = performance.now(); requestAnimationFrame(tick); });
+}).catch((e) => { document.getElementById("note").textContent = "The recording could not be loaded (" + e.message + ")."; });
+</script>
+</body>
+</html>

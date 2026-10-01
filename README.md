@@ -27,8 +27,10 @@ quai-dash tui --logs ~/node/nodelogs --theme angel
   (`quai_getMiningInfo`, `quai_getPendingWorkShares`).
 - Peers in and out, and a world map of connected peers.
 - Base fee, exchange rate, block and workshare rewards, fees and supply.
-- A block tape of the last few minutes, colored by tier. Bar height is gas
-  used; dots are workshares.
+- A block lattice of the last few minutes: three lanes, prime, region and
+  zone. Every block lands in its zone lane; a region block also extends
+  the region chain, and a prime block extends all three, joined by
+  vertical links. Node size is gas used; ticks are workshares.
 - The node's log, colored by level, with a WARN+ filter and pause.
 - Events: prime and region blocks, reorgs, stalls, RPC loss and recovery,
   and mismatches against a comparison node.
@@ -94,6 +96,14 @@ map.
   - Below 100×28 the layout keeps only the essentials.
 
 ## Demo mode
+
+`quai-dash web --demo` and `quai-dash tui --demo` show an invented node,
+for trying the dashboard without one.
+
+`quai-dash record --out tour.json` drives the real terminal renderer
+through a scripted tour on demo data (both looks, map, log, help) and
+saves the changed cells per frame; `web/tui.html` plays such a file back
+in a browser.
 
 `web/index.html` is a self-contained page. When no quai-dash server
 answers (for example, opened on its own), it runs on clearly labeled

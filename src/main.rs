@@ -8,6 +8,7 @@
 #![allow(clippy::float_arithmetic)]
 
 mod collect;
+mod demo;
 mod logs;
 mod peers;
 mod rpc;
@@ -70,6 +71,9 @@ struct Cli {
     /// Seconds without a zone block before the dashboard raises a stall.
     #[arg(long, global = true, default_value_t = 60)]
     stall_secs: u64,
+    /// Show an invented node instead of connecting to one.
+    #[arg(long, global = true)]
+    demo: bool,
 }
 
 #[derive(Subcommand)]
@@ -85,6 +89,23 @@ enum Cmd {
         /// Starting theme (t toggles).
         #[arg(long, value_enum, default_value_t = Theme::Ghost)]
         theme: Theme,
+    },
+    /// Record a scripted tour of the terminal dashboard as JSON frames
+    /// (for the web player).
+    #[command(hide = true)]
+    Record {
+        /// Output file.
+        #[arg(long)]
+        out: PathBuf,
+        /// Terminal size, COLSxROWS.
+        #[arg(long, default_value = "150x46")]
+        size: String,
+        /// Frames per second kept.
+        #[arg(long, default_value_t = 12)]
+        fps: u64,
+        /// Length in seconds.
+        #[arg(long, default_value_t = 48)]
+        seconds: u64,
     },
 }
 
@@ -133,8 +154,11 @@ fn run() -> Result<(), String> {
         let s = state.clone();
         std::thread::spawn(move || logs::follow(file, s));
     }
-    let cfg = collect::Config { label: cli.label.clone(), zone, region, prime, compare, geo, here, stall_secs: cli.stall_secs };
-    {
+    if cli.demo || matches!(cli.cmd, Cmd::Record { .. }) {
+        let s = state.clone();
+        std::thread::spawn(move || demo::run(s));
+    } else {
+        let cfg = collect::Config { label: cli.label.clone(), zone, region, prime, compare, geo, here, stall_secs: cli.stall_secs };
         let s = state.clone();
         std::thread::spawn(move || collect::run(cfg, s));
     }
@@ -144,6 +168,26 @@ fn run() -> Result<(), String> {
             web::serve(&listen, state)
         }
         Cmd::Tui { theme } => tui::run(state, theme),
+        Cmd::Record { out, size, fps, seconds } => {
+            let (w, h) = size.split_once('x').ok_or("--size expects COLSxROWS")?;
+            let dims = (w.parse().map_err(|_| "bad width")?, h.parse().map_err(|_| "bad height")?);
+            // Let the demo node fill in, then tour both looks and the views.
+            std::thread::sleep(Duration::from_millis(300));
+            let script = [
+                (9.0, 'm', "m  peer map, full screen"),
+                (15.0, 'm', "m  back to the dashboard"),
+                (20.0, 't', "t  switch look: ANGEL"),
+                (31.0, 'l', "l  node log, full height"),
+                (36.0, 'l', "l  back to the dashboard"),
+                (40.0, '?', "?  help"),
+                (43.0, '?', "?  close help"),
+                (44.5, 't', "t  switch look: GHOST"),
+            ];
+            let json = tui::record(&state, Theme::Ghost, dims, fps, seconds, &script)?;
+            std::fs::write(&out, json.to_string()).map_err(|e| format!("{}: {e}", out.display()))?;
+            eprintln!("quai-dash: wrote {}", out.display());
+            Ok(())
+        }
     }
 }
 
