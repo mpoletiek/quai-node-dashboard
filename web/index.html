@@ -1,0 +1,1045 @@
+<title>Quai Dive</title>
+<meta name="description" content="Live monitor for a Quai node (rs-quai or go-quai): chain heads, blocks, workshares by algorithm, peers, logs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Chakra+Petch:wght@400;500;600&family=Share+Tech+Mono&family=Shippori+Mincho+B1:wght@800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;500&display=swap&text=%E9%9B%BB%E8%84%B3%E5%90%8C%E6%9C%9F%E6%8E%A5%E7%B6%9A%E8%A8%98%E9%8C%B2%E5%9C%B0%E5%9B%B3%E6%89%BF%E8%AA%8D%E5%90%A6%E6%B1%BA%E5%90%88%E8%AD%B0%E8%AD%A6%E5%91%8A%E4%B8%BB%E9%8E%96%E5%88%B0%E9%81%94%E9%A0%98%E5%9F%9F%E5%8C%BA%E7%95%8C%E7%AE%97%E6%B3%95%E7%AF%80%E7%82%B9%E7%B5%8C%E6%B8%88%E5%8F%96%E5%BC%95%E5%AF%BE%E8%B1%A1%E7%9B%A3%E8%A6%96%E5%86%8D%E7%B7%A8%E6%88%90%E5%81%9C%E6%AD%A2%E7%AC%AC%E8%A9%B1%E4%BA%8B%E8%B1%A1%E8%BF%BD%E8%B7%A1%E9%A1%9E%E5%9E%8B%E9%8E%96%E5%AE%A4">
+<style>
+/* Two looks, both dark by design: the page paints every color itself. */
+:root {
+  color-scheme: dark;
+  --gut: clamp(16px, 2.2vw, 28px);
+  --gap: 14px;
+  --mono: "Share Tech Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+  /* GHOST palette (default) */
+  --bg: #01070b;
+  --bg2: #04131b;
+  --panel: rgba(6, 28, 36, .62);
+  --panel-edge: rgba(94, 246, 224, .26);
+  --line: rgba(94, 246, 224, .14);
+  --fg: #cffcf6;
+  --fg2: #8ccfc6;
+  --dim: #4b8780;
+  --acc: #5ef6e0;
+  --acc-soft: rgba(94, 246, 224, .16);
+  --hot: #ff3d7f;
+  --warn: #ffc35a;
+  --ok: #7dffb0;
+  --bad: #ff3d7f;
+  --tier-prime: #ff3d7f;
+  --tier-region: #ffc35a;
+  --tier-zone: #5ef6e0;
+  --display: "Chakra Petch", "Rajdhani", "Segoe UI", sans-serif;
+  --label: "Chakra Petch", "Segoe UI", sans-serif;
+  --label-track: .18em;
+  --radius: 2px;
+}
+body[data-look="angel"] {
+  --bg: #050203;
+  --bg2: #140704;
+  --panel: rgba(28, 9, 3, .72);
+  --panel-edge: rgba(255, 122, 26, .55);
+  --line: rgba(255, 122, 26, .16);
+  --fg: #ffeedf;
+  --fg2: #f2b88c;
+  --dim: #95603d;
+  --acc: #ff7a1a;
+  --acc-soft: rgba(255, 122, 26, .18);
+  --hot: #ff2a2a;
+  --warn: #ffb21a;
+  --ok: #3cff8f;
+  --bad: #ff2a2a;
+  --violet: #8a4dff;
+  --tier-prime: #ff2a2a;
+  --tier-region: #ffb21a;
+  --tier-zone: #ff7a1a;
+  --display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
+  --label: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --label-track: .12em;
+  --radius: 0;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 var(--mono);
+  overflow-x: hidden;
+  transition: background .6s ease;
+}
+#bgfx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.scan { position: fixed; inset: 0; pointer-events: none; z-index: 40;
+  background: repeating-linear-gradient(to bottom, rgba(255,255,255,.025) 0 1px, transparent 1px 3px); mix-blend-mode: overlay; }
+body[data-look="angel"] .scan { background: repeating-linear-gradient(to bottom, rgba(255,140,40,.03) 0 1px, transparent 1px 4px); }
+.sweep { position: fixed; left: 0; right: 0; height: 22vh; top: -22vh; pointer-events: none; z-index: 41;
+  background: linear-gradient(to bottom, transparent, var(--acc-soft), transparent); animation: sweep 9s linear infinite; opacity: .5; }
+@keyframes sweep { to { top: 110vh; } }
+
+.wrap { position: relative; z-index: 1; padding-inline: var(--gut); padding-block: 14px 28px; max-width: 1680px; margin: 0 auto; }
+
+/* ---------- Top bar ---------- */
+.top { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-block: 6px 14px; border-bottom: 1px solid var(--line); margin-bottom: var(--gap); }
+.brand { display: flex; align-items: baseline; gap: 12px; }
+.brand .mark { font: 600 22px/1 var(--display); letter-spacing: .14em; color: var(--acc); text-shadow: 0 0 18px var(--acc-soft); }
+body[data-look="angel"] .brand .mark { font-size: 30px; letter-spacing: .02em; transform: scaleX(.82); transform-origin: left; color: var(--fg); text-shadow: none; }
+.brand .jp { font: 300 12px var(--jp); color: var(--dim); letter-spacing: .3em; }
+.who { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--fg2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--panel-edge); font: 600 11px var(--label); letter-spacing: var(--label-track); text-transform: uppercase; color: var(--fg2); border-radius: var(--radius); white-space: nowrap; }
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.chip.off .dot { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
+.chip.demo { color: var(--warn); border-color: var(--warn); }
+.chip.demo .dot { background: var(--warn); box-shadow: 0 0 10px var(--warn); animation: blink 1.2s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+.spacer { flex: 1; }
+.looks { display: inline-flex; border: 1px solid var(--panel-edge); border-radius: var(--radius); }
+.looks button { background: transparent; color: var(--dim); border: 0; padding: 6px 12px; font: 600 12px var(--label); letter-spacing: var(--label-track); cursor: pointer; }
+.looks button[aria-pressed="true"] { background: var(--acc); color: var(--bg); }
+.looks button:focus-visible, .btn:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+.clock { font: 16px var(--mono); color: var(--fg2); letter-spacing: .08em; }
+
+/* ---------- Grid ---------- */
+.grid { display: grid; gap: var(--gap); grid-template-columns: minmax(250px, 3fr) minmax(0, 6fr) minmax(270px, 3fr); grid-template-areas:
+  "heads hero algos" "econ map algos" "econ map sync" "tape tape tape" "logs logs events"; }
+@media (max-width: 1180px) {
+  .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "hero hero" "heads algos" "map map" "econ sync" "tape tape" "logs logs" "events events"; }
+}
+@media (max-width: 720px) {
+  .grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "heads" "algos" "map" "sync" "econ" "tape" "events" "logs"; }
+}
+
+.panel { position: relative; background: var(--panel); border: 1px solid var(--line); padding: 14px 16px 16px; min-width: 0; border-radius: var(--radius);
+  backdrop-filter: blur(3px); }
+/* GHOST: corner brackets */
+.panel::before, .panel::after { content: ""; position: absolute; width: 14px; height: 14px; border-color: var(--acc); border-style: solid; opacity: .8; pointer-events: none; }
+.panel::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+.panel::after { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+/* ANGEL: heavy frame, clipped corner, stripe tab */
+body[data-look="angel"] .panel { border: 1px solid var(--panel-edge); clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); }
+body[data-look="angel"] .panel::before { width: 46px; height: 6px; border: 0; top: 0; left: 14px;
+  background: repeating-linear-gradient(-45deg, var(--acc) 0 6px, transparent 6px 12px); opacity: .9; }
+body[data-look="angel"] .panel::after { width: 0; height: 0; border-width: 0; }
+
+.ph { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.ph h2 { margin: 0; font: 600 12px var(--label); letter-spacing: var(--label-track); text-transform: uppercase; color: var(--acc); }
+body[data-look="angel"] .ph h2 { font-size: 15px; color: var(--fg); }
+.ph .jp { font: 300 11px var(--jp); color: var(--dim); letter-spacing: .25em; }
+.ph .aside { margin-left: auto; font-size: 11px; color: var(--dim); }
+
+.lbl { font: 500 10.5px var(--label); letter-spacing: var(--label-track); text-transform: uppercase; color: var(--dim); }
+body[data-look="angel"] .lbl { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- Hero ---------- */
+#hero { grid-area: hero; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; overflow: hidden; }
+.height { overflow: hidden; font: 500 clamp(44px, 5.6vw, 92px)/1 var(--display); letter-spacing: .02em; color: var(--fg); text-shadow: 0 0 28px var(--acc-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+body[data-look="angel"] .height { font-family: var(--label); font-weight: 700; font-size: clamp(48px, 5vw, 88px); letter-spacing: 0; color: var(--acc); text-shadow: 0 0 24px rgba(255,122,26,.35); }
+.hero-meta { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 10px; }
+.hero-meta .v { font-size: 18px; color: var(--fg); }
+.hero-meta .v small { color: var(--dim); font-size: 12px; margin-left: 3px; }
+#spark { width: 100%; height: 46px; display: block; margin-top: 10px; }
+.timerbox { position: relative; width: 188px; height: 188px; }
+#timer { width: 100%; height: 100%; display: block; }
+body[data-look="angel"] .timerbox { width: 280px; height: 150px; }
+@media (max-width: 720px) {
+  #hero { grid-template-columns: minmax(0, 1fr); }
+  .timerbox, body[data-look="angel"] .timerbox { width: 100%; max-width: 300px; height: 150px; }
+}
+
+/* ---------- Heads ---------- */
+#heads { grid-area: heads; }
+.tier { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.tier:first-of-type { border-top: 0; }
+.tier .name { font: 600 12px var(--label); letter-spacing: var(--label-track); text-transform: uppercase; }
+.tier .n { font-size: 20px; text-align: right; }
+.tier .age { grid-column: 2 / 4; height: 3px; background: var(--line); position: relative; overflow: hidden; }
+.tier .age i { position: absolute; inset: 0 auto 0 0; width: 0; background: currentColor; transition: width .9s linear; }
+.tier.flash .n { animation: tierflash 1.4s ease-out; }
+@keyframes tierflash { 0% { color: var(--bg); background: currentColor; } 100% { background: transparent; } }
+.t-prime { color: var(--tier-prime); } .t-region { color: var(--tier-region); } .t-zone { color: var(--tier-zone); }
+.ratio { margin-top: 10px; font-size: 11px; color: var(--dim); }
+
+/* ---------- Algorithms ---------- */
+#algos { grid-area: algos; }
+.algos { display: grid; gap: 10px; }
+.algo { position: relative; padding: 10px 12px; border: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; border-radius: var(--radius); }
+.algo .an { font: 600 13px var(--label); letter-spacing: var(--label-track); color: var(--acc); }
+.algo .hr { font-size: 22px; text-align: right; }
+.algo .meta { grid-column: 1 / 3; display: flex; justify-content: space-between; font-size: 11px; color: var(--fg2); }
+.algo canvas { grid-column: 1 / 3; width: 100%; height: 26px; display: block; }
+.algo .verdict { display: none; }
+.consensus { display: none; }
+/* ANGEL: the triad */
+body[data-look="angel"] .algos { grid-template-columns: 1fr 1fr; grid-template-areas: "a0 a0" "a1 a2" "cc cc"; gap: 10px; }
+body[data-look="angel"] .algo { border: 2px solid var(--acc); background: rgba(255,122,26,.06); clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+body[data-look="angel"] .algo:nth-child(1) { grid-area: a0; width: min(100%, 62%); justify-self: center; }
+body[data-look="angel"] .algo:nth-child(2) { grid-area: a1; }
+body[data-look="angel"] .algo:nth-child(3) { grid-area: a2; }
+body[data-look="angel"] .algo { grid-template-columns: minmax(0, 1fr); }
+body[data-look="angel"] .algo .an { color: var(--fg); font-size: 16px; }
+body[data-look="angel"] .algo .hr { text-align: left; font-size: 20px; }
+body[data-look="angel"] .algo .meta, body[data-look="angel"] .algo canvas, body[data-look="angel"] .algo .verdict { grid-column: 1; }
+body[data-look="angel"] .algo .verdict { display: block; grid-column: 1 / 3; text-align: center; font: 700 18px var(--label); letter-spacing: .14em; padding: 3px 0; color: var(--bg); background: var(--ok); }
+body[data-look="angel"] .algo .verdict .jp { font: 500 15px var(--jp); margin-right: 8px; letter-spacing: .2em; }
+body[data-look="angel"] .algo.denied { border-color: var(--bad); }
+body[data-look="angel"] .algo.denied .verdict { background: var(--bad); }
+body[data-look="angel"] .consensus { display: block; grid-area: cc; text-align: center; font: 700 13px var(--label); letter-spacing: .3em; color: var(--fg2); }
+body[data-look="angel"] .consensus b { color: var(--ok); }
+.pending { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.pending .p { flex: 1; min-width: 70px; border-top: 2px solid var(--acc); padding-top: 4px; }
+.pending .p b { display: block; font-size: 18px; font-weight: 400; }
+
+/* ---------- Map ---------- */
+#mapp { grid-area: map; display: flex; flex-direction: column; min-height: 380px; }
+#map { width: 100%; flex: 1; min-height: 320px; display: block; cursor: grab; }
+.mapnote { font-size: 11px; color: var(--warn); margin-top: 6px; }
+.peerstats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--fg2); }
+.peerstats b { color: var(--fg); font-size: 16px; font-weight: 400; margin-left: 4px; }
+
+/* ---------- Economy ---------- */
+#econ { grid-area: econ; }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: baseline; }
+.kv .v { text-align: right; font-size: 15px; white-space: nowrap; }
+.kv .v small { color: var(--dim); font-size: 11px; margin-left: 4px; }
+
+/* ---------- Sync ---------- */
+#sync { grid-area: sync; }
+.syncbig { font: 600 clamp(38px, 4.4vw, 58px)/1 var(--display); font-variant-numeric: tabular-nums; color: var(--ok); }
+body[data-look="angel"] .syncbig { font-family: var(--label); font-weight: 700; color: var(--acc); }
+.syncsub { margin-top: 8px; font-size: 12px; color: var(--fg2); display: grid; gap: 3px; }
+.syncbar { height: 6px; margin-top: 10px; background: var(--line); position: relative; overflow: hidden; }
+.syncbar i { position: absolute; inset: 0 auto 0 0; background: var(--ok); transition: width .8s ease; }
+
+/* ---------- Tape ---------- */
+#tapep { grid-area: tape; }
+#tape { width: 100%; height: 150px; display: block; }
+.legend { display: flex; gap: 16px; font-size: 11px; color: var(--fg2); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+.readout { font-size: 12px; color: var(--fg2); min-height: 18px; margin-top: 6px; overflow-wrap: anywhere; }
+
+/* ---------- Logs & events ---------- */
+#logp { grid-area: logs; display: flex; flex-direction: column; }
+#log { height: 300px; overflow-y: auto; font: 12px/1.55 var(--mono); padding-right: 6px; scrollbar-color: var(--dim) transparent; }
+#log div { white-space: pre-wrap; word-break: break-word; border-left: 2px solid transparent; padding-left: 8px; }
+#log .ERROR { color: var(--bad); border-left-color: var(--bad); }
+#log .WARN { color: var(--warn); border-left-color: var(--warn); }
+#log .INFO { color: var(--fg2); }
+#log .DEBUG, #log .TRACE { color: var(--dim); }
+#log .fresh { animation: logfresh 1.2s ease-out; }
+@keyframes logfresh { from { background: var(--acc-soft); } to { background: transparent; } }
+#log mark { background: none; color: var(--acc); }
+.filters { display: inline-flex; gap: 4px; margin-left: auto; }
+.btn { background: transparent; color: var(--dim); border: 1px solid var(--line); padding: 3px 9px; font: 600 11px var(--label); letter-spacing: var(--label-track); cursor: pointer; border-radius: var(--radius); }
+.btn[aria-pressed="true"] { color: var(--bg); background: var(--acc); border-color: var(--acc); }
+#events { grid-area: events; }
+#evlist { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; }
+.ev { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; font-size: 12px; padding: 5px 0 5px 8px; border-left: 3px solid var(--line); }
+.ev time { color: var(--dim); }
+.ev.prime { border-left-color: var(--tier-prime); }
+.ev.region { border-left-color: var(--tier-region); }
+.ev.reorg, .ev.stall, .ev.offline, .ev.mismatch { border-left-color: var(--bad); color: var(--bad); }
+.ev.resume, .ev.online { border-left-color: var(--ok); }
+.empty { color: var(--dim); font-size: 12px; }
+
+/* ---------- Cinematics ---------- */
+#cine { position: fixed; inset: 0; z-index: 60; pointer-events: none; display: grid; place-items: center; }
+.banner { position: fixed; left: 0; right: 0; top: 34%; z-index: 59; pointer-events: none; padding: 16px var(--gut); text-align: center; }
+.ghost-hit { font: 600 clamp(28px, 5vw, 64px)/1 var(--display); letter-spacing: .3em; color: var(--acc);
+  text-shadow: -3px 0 var(--hot), 3px 0 #3ad1ff, 0 0 30px var(--acc); animation: glitch .9s steps(9) 1, fadeout 2.4s ease-in forwards; }
+.ghost-hit small { display: block; font: 300 14px var(--jp); letter-spacing: .6em; margin-top: 14px; color: var(--fg2); text-shadow: none; }
+@keyframes glitch { 0% { clip-path: inset(0 0 80% 0); transform: translateX(-12px); } 20% { clip-path: inset(40% 0 30% 0); transform: translateX(10px); }
+  40% { clip-path: inset(10% 0 60% 0); transform: translateX(-6px); } 60% { clip-path: inset(70% 0 5% 0); transform: translateX(4px); } 100% { clip-path: inset(0); transform: none; } }
+@keyframes fadeout { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+.angel-banner { background: repeating-linear-gradient(-45deg, var(--hot) 0 18px, #000 18px 36px); padding: 6px 0; animation: fadeout 2.6s ease-in forwards; }
+.angel-banner div { background: #000; color: var(--hot); font: 700 clamp(26px, 4.4vw, 54px)/1.1 var(--label); letter-spacing: .3em; padding: 12px 0; }
+.angel-banner div.amber { color: var(--warn); }
+.titlecard { position: fixed; inset: 0; background: #000; display: grid; place-content: center; text-align: left; padding: var(--gut); animation: fadeout 3.2s ease-in forwards; }
+.titlecard .ep { font: 800 clamp(20px, 3vw, 40px)/1 var(--display); color: #fff; transform: scaleX(.8); transform-origin: left; }
+.titlecard .big { font: 800 clamp(64px, 13vw, 190px)/.92 var(--display); color: #fff; transform: scaleX(.78); transform-origin: left; letter-spacing: -.01em; }
+.titlecard .sub { font: 800 clamp(22px, 3.4vw, 46px)/1.1 var(--display); color: #fff; margin-top: 18px; transform: scaleX(.8); transform-origin: left; }
+.boot { position: fixed; left: var(--gut); bottom: 18px; z-index: 61; pointer-events: none; font: 12px var(--mono); color: var(--acc); text-shadow: 0 0 8px var(--acc-soft); animation: fadeout 3.4s ease-in forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .sweep, .boot { display: none; }
+  .ghost-hit, .angel-banner, .titlecard { animation: fadeout 2.4s steps(1) forwards; }
+  .tier.flash .n, #log .fresh { animation: none; }
+}
+</style>
+
+<canvas id="bgfx" aria-hidden="true"></canvas>
+<div class="scan" aria-hidden="true"></div>
+<div class="sweep" aria-hidden="true"></div>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><span class="mark" id="mark">QUAI DIVE</span><span class="jp" id="markjp">電脳 監視</span></div>
+    <div class="who">
+      <span class="chip" id="status"><span class="dot"></span><span id="statustext">CONNECTING</span></span>
+      <span id="nodelabel">—</span><span id="nodeloc"></span>
+    </div>
+    <div class="spacer"></div>
+    <div class="looks" role="group" aria-label="Look">
+      <button type="button" id="look-ghost" aria-pressed="true">GHOST</button>
+      <button type="button" id="look-angel" aria-pressed="false">ANGEL</button>
+    </div>
+    <span class="lbl" title="Keyboard: T switches the look, C turns the full-screen moments on or off">T look · C cinematics</span>
+    <span class="clock num" id="clock">--:--:--</span>
+  </header>
+
+  <main class="grid">
+    <section class="panel" id="hero" aria-label="Zone head">
+      <div>
+        <div class="ph"><h2 id="herotitle">Zone height</h2><span class="jp">区界 · 同期</span><span class="aside" id="herohash"></span></div>
+        <div class="height" id="height">— — —</div>
+        <div class="hero-meta">
+          <div><div class="lbl">Avg block time</div><div class="v num" id="avgbt">—</div></div>
+          <div><div class="lbl">Txs · last block</div><div class="v num" id="lasttx">—</div></div>
+          <div><div class="lbl">Workshares · last</div><div class="v num" id="lastws">—</div></div>
+          <div><div class="lbl">Gas used</div><div class="v num" id="lastgas">—</div></div>
+        </div>
+        <canvas id="spark" aria-label="Recent block intervals"></canvas>
+      </div>
+      <div class="timerbox"><canvas id="timer" aria-label="Seconds since the last block"></canvas></div>
+    </section>
+
+    <section class="panel" id="heads" aria-label="Chain heads">
+      <div class="ph"><h2>Hierarchy</h2><span class="jp">主鎖 · 領域 · 区界</span></div>
+      <div class="tier t-prime" id="tier-prime"><span class="name">Prime</span><span></span><span class="n num">—</span><span class="age"><i></i></span></div>
+      <div class="tier t-region" id="tier-region"><span class="name">Region</span><span></span><span class="n num">—</span><span class="age"><i></i></span></div>
+      <div class="tier t-zone" id="tier-zone"><span class="name">Zone</span><span></span><span class="n num">—</span><span class="age"><i></i></span></div>
+      <div class="ratio" id="ratio">Bars show time since each chain's last block.</div>
+    </section>
+
+    <section class="panel" id="algos" aria-label="Proof of work">
+      <div class="ph"><h2>Proof of work</h2><span class="jp">算法 合議</span><span class="aside" id="algoaside"></span></div>
+      <div class="algos" id="algolist">
+        <div class="algo" id="algo-kawpow"><span class="an">KAWPOW·1</span><span class="hr num">—</span><span class="meta"><span>share <b class="st">—</b></span><span>pending <b class="pd">0</b></span></span><canvas></canvas><span class="verdict"><span class="jp">承認</span>APPROVED</span></div>
+        <div class="algo" id="algo-sha"><span class="an">SHA·2</span><span class="hr num">—</span><span class="meta"><span>share <b class="st">—</b></span><span>pending <b class="pd">0</b></span></span><canvas></canvas><span class="verdict"><span class="jp">承認</span>APPROVED</span></div>
+        <div class="algo" id="algo-scrypt"><span class="an">SCRYPT·3</span><span class="hr num">—</span><span class="meta"><span>share <b class="st">—</b></span><span>pending <b class="pd">0</b></span></span><canvas></canvas><span class="verdict"><span class="jp">承認</span>APPROVED</span></div>
+        <div class="consensus" id="consensus">合議 · <b>3 / 3 APPROVED</b></div>
+      </div>
+    </section>
+
+    <section class="panel" id="mapp" aria-label="Peer map">
+      <div class="ph"><h2>Peers</h2><span class="jp">接続 地図</span>
+        <div class="peerstats aside"><span>in<b class="num" id="pin">—</b></span><span>out<b class="num" id="pout">—</b></span><span>located<b class="num" id="ploc">—</b></span></div></div>
+      <canvas id="map" aria-label="World map of connected peers"></canvas>
+      <div class="mapnote" id="mapnote" hidden></div>
+    </section>
+
+    <section class="panel" id="econ" aria-label="Economy">
+      <div class="ph"><h2>Economy</h2><span class="jp">経済</span></div>
+      <div class="kv">
+        <span class="lbl">Base fee</span><span class="v num" id="e-base">—</span>
+        <span class="lbl">Exchange rate (kQuai)</span><span class="v num" id="e-rate">—</span>
+        <span class="lbl">Block reward</span><span class="v num" id="e-reward">—</span>
+        <span class="lbl">Workshare reward</span><span class="v num" id="e-ws">—</span>
+        <span class="lbl">Avg tx fees / block</span><span class="v num" id="e-fees">—</span>
+        <span class="lbl">Quai supply</span><span class="v num" id="e-supply">—</span>
+        <span class="lbl">Chain ID</span><span class="v num" id="e-chain">—</span>
+      </div>
+    </section>
+
+    <section class="panel" id="sync" aria-label="Synchronization">
+      <div class="ph"><h2 id="synctitle">Sync ratio</h2><span class="jp">同期</span></div>
+      <div class="syncbig num" id="syncbig">—</div>
+      <div class="syncbar"><i id="syncbar" style="width:0"></i></div>
+      <div class="syncsub" id="syncsub"></div>
+    </section>
+
+    <section class="panel" id="tapep" aria-label="Recent blocks">
+      <div class="ph"><h2>Block tape</h2><span class="jp">記録</span>
+        <div class="legend aside"><span><i style="background:var(--tier-zone)"></i>zone</span><span><i style="background:var(--tier-region)"></i>region</span><span><i style="background:var(--tier-prime)"></i>prime</span><span>bar height = gas used · dots = workshares</span></div></div>
+      <canvas id="tape" aria-label="Recent blocks over time"></canvas>
+      <div class="readout num" id="readout">Point at a block for details.</div>
+    </section>
+
+    <section class="panel" id="logp" aria-label="Node log">
+      <div class="ph"><h2>Node log</h2><span class="jp">記録</span><span class="aside" id="logfile"></span>
+        <div class="filters"><button class="btn" type="button" id="f-all" aria-pressed="true">ALL</button><button class="btn" type="button" id="f-warn" aria-pressed="false">WARN+</button><button class="btn" type="button" id="f-pause" aria-pressed="false">PAUSE</button></div></div>
+      <div id="log" role="log" aria-live="off"></div>
+    </section>
+
+    <section class="panel" id="events" aria-label="Events">
+      <div class="ph"><h2>Events</h2><span class="jp">事象 追跡</span></div>
+      <div id="evlist"></div>
+    </section>
+  </main>
+</div>
+<div id="cine" aria-live="polite"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- utilities
+const $ = (id) => document.getElementById(id);
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } },
+};
+const fmtInt = (n) => (n == null || isNaN(n) ? "—" : Math.round(n).toLocaleString("en-US"));
+function si(h, unit = "H/s") {
+  if (!h || h <= 0) return "0 " + unit;
+  const u = ["", "K", "M", "G", "T", "P", "E", "Z"];
+  let i = 0;
+  while (h >= 1000 && i < u.length - 1) { h /= 1000; i++; }
+  return (h >= 100 ? h.toFixed(0) : h >= 10 ? h.toFixed(1) : h.toFixed(2)) + " " + u[i] + unit;
+}
+function weiStr(dec, digits = 4) { // decimal wei string → Quai
+  if (!dec) return "—";
+  const s = dec.replace(/^0+/, "") || "0";
+  const pad = s.padStart(19, "0");
+  const int = pad.slice(0, pad.length - 18).replace(/^0+(?=\d)/, "");
+  return Number(int).toLocaleString("en-US") + (digits ? "." + pad.slice(-18, -18 + digits) : "");
+}
+function gwei(dec) { if (!dec) return "—"; const n = Number(dec) / 1e9; return n >= 1000 ? (n / 1000).toFixed(2) + "k gwei" : n.toFixed(2) + " gwei"; }
+function css(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+function hexA(color, a) { // #rrggbb → rgba
+  const c = color.replace("#", "");
+  if (c.length !== 6) return color;
+  return `rgba(${parseInt(c.slice(0, 2), 16)},${parseInt(c.slice(2, 4), 16)},${parseInt(c.slice(4, 6), 16)},${a})`;
+}
+function sizeCanvas(cv) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = cv.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: r.width, h: r.height };
+}
+// Scrambles digits briefly before settling (GHOST) or flips instantly (ANGEL).
+const scrambling = new Map();
+function setNum(el, text) {
+  if (el.dataset.v === text) return;
+  el.dataset.v = text;
+  if (reduceMotion || look === "angel" || !el.dataset.scr) { el.textContent = text; return; }
+  const glyphs = "0123456789ABCDEFｱｲｳｴｵｶｷｸ";
+  let f = 0;
+  clearInterval(scrambling.get(el));
+  const id = setInterval(() => {
+    f++;
+    el.textContent = [...text].map((c, i) => (/[0-9]/.test(c) && i >= f - 2 ? glyphs[(Math.random() * glyphs.length) | 0] : c)).join("");
+    if (f > text.length + 3) { clearInterval(id); el.textContent = text; }
+  }, 28);
+  scrambling.set(el, id);
+}
+
+// ---------------------------------------------------------------- land mask
+const LAND_W = 240, LAND_H = 120;
+const LAND = (() => {
+  const b = atob("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB//8////44AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPx/n/////AAAA/AAYAAAAfAAAAAAAAAAAAAAAAEO3v4f////+AAAPgAAAAAAAAcAAAAAAAAAAAAAADAAAfgP////+AAAHAAAAAAAAAMAAAAAAAAAAAAAAA9jjCAAP///+AAAAAAAAHgAAP/8AAPAAAAAAAAAAcAAAAAAD///8AAAAAAAAYAAD//gAAAAAAAAAAAAAe6zs/AAB///4AAAAAAABgDA/////wGAAAAwAEAAAI/wM//AAf4AH///////xwHf/////z/+AAAAB//wPI/+sEP4A///wAAAAf8AACHf////////8B8P4AAAAAPPIZ+H/gAD////8AAOcgEQAAAAAAAAAAAE/AAAAAAAAB+AfAAf////4AAHAAAgAAAAAAAAAAA54AAAAAAAALwG/gH/4H//wOB4AAAAAAAAAAAAAAAAAf///////Ng+AP4ADAAA/n////////////////+AD///////8COMAHwAAAAD/P///////////////v8AD/7/////4APwABgAAAAH/P//////////////wfAAA+AH////4APzAAAAAAAD/D/////////////JhgAAAFAAf///8AH/gAAAAAIAOD////////////4AHAAAAQAAP////wH/gAAAAAMBuP////////////wAPgAACAAAH////+f/8AAAAAWAhf////////////AAPAAAAAAAT////+f/+AAAAA3H//////////////+AOAAAAAAAB/////f/8AAAAAHn//////////////+AIAAAAAAAB//////8wAAAAAMf//////////////9AAAAAAAAAA//////2HAAAAAF///////////////4AAAAAAAAAAf/////+AgAAAAD///////////////4AAAAAAAAAAf//////wAAAAAB///yfx/////////wAAAAAAAAAAf/////yAAAAAAB/z/gPj/////////jAAAAAAAAAAf/////gAAAAAA/wY/gDx////////8HAAAAAAAAAAf/////AAAAAAA/gGfnn4////////wAAAAAAAAAAAf////+AAAAAAA/ACY//4///////1gGAAAAAAAAAAP////8AAAAAAA/ACM//4///////hwEAAAAAAAAAAH////4AAAAAAAOLgA//////////4wcAAAAAAAAAAH////4AAAAAAAN/gDC/////////wz8AAAAAAAAAAB////wAAAAAAAf/gAA/////////wDgAAAAAAAAAAA////AAAAAAAA//8YB/////////4EAAAAAAAAAAAAX///AAAAAAAA///f//////////4AAAAAAAAAAAAAX/5BAAAAAAAB//////z///////4AAAAAAAAAAAAAb/gBAAAAAAAH////8/5///////4AAAAAAAAAAAAAF/gBoAAAAAAP////+/4f//////wAAAAAAAAAAAAAE/gAAAAAAAAP////+f8wH/////gAAAAAAAAAAAAAAfgAAAAAAAAf/////P/4D/////IAAAAAAAAAAAAAAPgAQAAAAAAf/////v/8D/+f/4AAAAAAAAAAAAAAAPgwOAAAAAAf/////n/4Af8P+AAAAAAAAAAAAAAAAHxwAwAAAAAf/////n/wAfwH+wAAAAAAAAAAAAAAAB/gAAAAAAAf/////z/gAfgH+AMAAAAAAAAAAAAAAAT8AAAAAAAf/////z+AAfAF/AIAAAAAAAAAAAAAAAB+AAAAAAAf/////94AAOAB/gIAAAAAAAAAAAAAAAAMAAAAAAAf//////AAAOAA/gCAAAAAAAAAAAAAAAAEBQAAAAAP/////+MAAGAAHAFAAAAAAAAAAAAAAAACDfgAAAAH//////8AAGAACAAAAAAAAAAAAAAAAAABP/wAAAAH//////4AABABgADAAAAAAAAAAAAAAAAAP/4AAAAD//////4AABAAQABAAAAAAAAAAAAAAAAAP//gAAAA/H////wAAAACYBgAAAAAAAAAAAAAAAAAH//wAAAAAA////wAAAADYDAAAAAAAAAAAAAAAAAAP//wAAAAAA////gAAAABoPgAAAAAAAAAAAAAAAAAf//4AAAAAA///+AAAAAA4fuQAAAAAAAAAAAAAAAA///+AAAAAA///8AAAAAAYfASAAAAAAAAAAAAAAAA////AAAAAA///4AAAAAAcfYBYAAAAAAAAAAAAAAA////8AAAAAf//4AAAAAAOCEh/AAAAAAAAAAAAAAA/////AAAAAP//wAAAAAAGAAAPgAAAAAAAAAAAAAA/////gAAAAP//wAAAAAADIABPwIAAAAAAAAAAAAAf////gAAAAH//wAAAAAAAOAAPYCAAAAAAAAAAAAAP////AAAAAH//4AAAAAAAACAAMAAAAAAAAAAAAAAP///+AAAAAH//4AAAAAAAAAAAAAAAAAAAAAAAAAAH///+AAAAAH//4AAAAAAAAAHhAAAAAAAAAAAAAAAH///8AAAAAP//4IAAAAAAAAvjAAAAAAAAAAAAAAAD///8AAAAAP//4cAAAAAAAB/jgAAAAAAAAAAAAAAA///8AAAAAP//h4AAAAAAAD/7gAAAAAAAAAAAAAAAf//8AAAAAP//B4AAAAAAAH//wAAAAAAAAAAAAAAAf//4AAAAAH/+AwAAAAAAAf//4AQAAAAAAAAAAAAAf//4AAAAAH//BwAAAAAAB///8AIAAAAAAAAAAAAAf//gAAAAAD//BwAAAAAAD///+AAAAAAAAAAAAAAAf/8AAAAAAD/+BgAAAAAAD////AAAAAAAAAAAAAAAf/8AAAAAAD/8AAAAAAAAD////AAAAAAAAAAAAAAAf/8AAAAAAD/8AAAAAAAAD////AAAAAAAAAAAAAAA//4AAAAAAB/4AAAAAAAAB////AAAAAAAAAAAAAAA//wAAAAAAA/wAAAAAAAAB////AAAAAAAAAAAAAAA//gAAAAAAA/gAAAAAAAAB/h//AAAAAAAAAAAAAAA//AAAAAAAA+AAAAAAAAAB+Av+AAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAP8AAQAAAAAAAAAAAB/8AAAAAAAAAAAAAAAAAAAAAH8AAIAAAAAAAAAAAB/4AAAAAAAAAAAAAAAAAAAAADQAAOAAAAAAAAAAAB/gAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAB+AAAAAAAAAAAAAAAAAAAAAAAYAAIAAAAAAAAAAAB+AAAAAAAAAAAAAAAAAAAAAAAYAAwAAAAAAAAAAAD8AAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAAD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAADwAACAefH/gAAAAAAAAAAAAAAAAEAAAAAAAAAAAB//8B///////4AAAAAAAAAAAAAAA/AAAAAAAAAAH///8P////////8AAAAAAAAAAAAAB3gAAAAATf//////8//////////+AAAAAAAAAAAgAHgAAAAH////////////////////AAAAAAAB4B////gAAAAP///////////////////4AAAAD////////4AAAAD////////////////////gAAALP///////8AAAAD/////////////////////gAABj////////wAAHg//////////////////////4AAAAD///////8AQ/AB////////////////////+AAAAB//////////AGP//////////////////////AAAAA///////////////////////////////////8AAD//gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+  const bits = new Uint8Array(LAND_W * LAND_H);
+  for (let i = 0; i < bits.length; i++) bits[i] = (b.charCodeAt(i >> 3) >> (7 - (i & 7))) & 1;
+  return bits;
+})();
+const LAND_PTS = [];
+for (let y = 0; y < LAND_H; y++) for (let x = 0; x < LAND_W; x++) if (LAND[y * LAND_W + x]) LAND_PTS.push([90 - (y + 0.5) * 1.5, -180 + (x + 0.5) * 1.5]);
+
+// ---------------------------------------------------------------- look
+let look = ["#ghost", "#angel"].includes(location.hash) ? location.hash.slice(1) : store.get("quaidive.look", "ghost");
+let cinematics = store.get("quaidive.cine", "on") !== "off";
+function setLook(l) {
+  look = l === "angel" ? "angel" : "ghost";
+  document.body.dataset.look = look;
+  $("look-ghost").setAttribute("aria-pressed", String(look === "ghost"));
+  $("look-angel").setAttribute("aria-pressed", String(look === "angel"));
+  $("mark").textContent = look === "ghost" ? "QUAI DIVE" : "QUAI DIVE";
+  $("markjp").textContent = look === "ghost" ? "電脳 監視" : "同期 監視 室";
+  $("herotitle").textContent = "Zone height";
+  store.set("quaidive.look", look);
+  drawBg();
+  if (lastState) render(lastState, true);
+}
+$("look-ghost").onclick = () => setLook("ghost");
+$("look-angel").onclick = () => setLook("angel");
+addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("input,textarea")) return;
+  if (e.key === "t" || e.key === "T") setLook(look === "ghost" ? "angel" : "ghost");
+  if (e.key === "c" || e.key === "C") { cinematics = !cinematics; store.set("quaidive.cine", cinematics ? "on" : "off"); toast(cinematics ? "Cinematics on" : "Cinematics off"); }
+});
+
+// ---------------------------------------------------------------- background
+function drawBg() {
+  const cv = $("bgfx");
+  const { ctx, w, h } = sizeCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  const acc = css("--acc");
+  if (look === "angel") {
+    // Hexagon field, brighter near the bottom right.
+    const r = 22, dx = r * Math.sqrt(3), dy = r * 1.5;
+    for (let row = -1, y = 0; y < h + r; row++, y = row * dy) {
+      for (let col = -1; col * dx < w + dx; col++) {
+        const x = col * dx + (row & 1 ? dx / 2 : 0);
+        const d = Math.hypot(x - w, y - h) / Math.hypot(w, h);
+        ctx.strokeStyle = hexA(acc, 0.03 + 0.09 * (1 - d) * (1 - d));
+        ctx.beginPath();
+        for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a)); }
+        ctx.closePath(); ctx.stroke();
+      }
+    }
+  } else {
+    // Fine grid with a slight radial glow.
+    const g = ctx.createRadialGradient(w * 0.5, h * 0.35, 0, w * 0.5, h * 0.35, Math.max(w, h) * 0.7);
+    g.addColorStop(0, "rgba(20,80,90,.22)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = hexA(acc, 0.035); ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 32) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke(); }
+    for (let y = 0; y < h; y += 32) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke(); }
+  }
+}
+addEventListener("resize", () => drawBg());
+
+// ---------------------------------------------------------------- cinematics
+let lastTitleCard = 0;
+function clearCine() { $("cine").replaceChildren(); }
+function banner(kind, title, sub) {
+  if (!cinematics) return;
+  const host = $("cine");
+  const el = document.createElement("div");
+  el.className = "banner";
+  if (look === "ghost") {
+    el.innerHTML = `<div class="ghost-hit">${title}<small>${sub}</small></div>`;
+  } else {
+    el.innerHTML = `<div class="angel-banner"><div class="${kind === "region" ? "amber" : ""}">${title}</div></div>`;
+  }
+  host.replaceChildren(el);
+  setTimeout(() => el.remove(), 2800);
+}
+function titleCard(lines) {
+  if (!cinematics) return;
+  const el = document.createElement("div");
+  el.className = "titlecard";
+  el.innerHTML = `<div class="ep">${lines[0]}</div><div class="big">${lines[1]}</div><div class="sub">${lines[2]}</div>`;
+  $("cine").replaceChildren(el);
+  setTimeout(() => el.remove(), 3300);
+}
+function toast(text) {
+  const el = document.createElement("div");
+  el.className = "boot"; el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3400);
+}
+function onEvent(ev) {
+  if (ev.kind === "prime") {
+    const n = ev.text.match(/Prime block (\d+)/);
+    const num = n ? Number(n[1]).toLocaleString("en-US") : "";
+    if (look === "angel" && performance.now() - lastTitleCard > 90000) {
+      lastTitleCard = performance.now();
+      titleCard(["第 " + num + " 話", "PRIME", "主鎖到達 · zone " + (ev.number || "").toLocaleString("en-US")]);
+    } else if (look === "angel") {
+      banner("prime", "PATTERN PRIME", "");
+    } else {
+      banner("prime", "PRIME CONVERGENCE", "主鎖到達 · " + num);
+    }
+    flashTier("prime");
+  } else if (ev.kind === "region") {
+    flashTier("region");
+  } else if (["reorg", "stall", "mismatch", "offline"].includes(ev.kind)) {
+    banner("alert", look === "angel" ? "警告 " + ev.kind.toUpperCase() : ev.kind.toUpperCase() + " DETECTED", ev.text);
+  }
+}
+function flashTier(t) {
+  const el = $("tier-" + t);
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+}
+
+// ---------------------------------------------------------------- demo data
+// Used when no quai-dash server answers (for example when the page is
+// opened on its own). Shapes match /api/state; values are invented.
+const CITIES = [[40.71,-74.0,"New York","US"],[37.77,-122.42,"San Francisco","US"],[41.88,-87.63,"Chicago","US"],[30.27,-97.74,"Austin","US"],[47.61,-122.33,"Seattle","US"],[43.65,-79.38,"Toronto","CA"],[51.51,-0.13,"London","GB"],[52.52,13.4,"Berlin","DE"],[50.11,8.68,"Frankfurt","DE"],[48.86,2.35,"Paris","FR"],[52.37,4.9,"Amsterdam","NL"],[59.33,18.07,"Stockholm","SE"],[60.17,24.94,"Helsinki","FI"],[47.37,8.54,"Zurich","CH"],[41.9,12.5,"Rome","IT"],[40.42,-3.7,"Madrid","ES"],[50.08,14.44,"Prague","CZ"],[52.23,21.01,"Warsaw","PL"],[55.75,37.62,"Moscow","RU"],[35.68,139.69,"Tokyo","JP"],[34.69,135.5,"Osaka","JP"],[37.57,126.98,"Seoul","KR"],[1.35,103.82,"Singapore","SG"],[22.32,114.17,"Hong Kong","HK"],[25.03,121.57,"Taipei","TW"],[-33.87,151.21,"Sydney","AU"],[-37.81,144.96,"Melbourne","AU"],[19.08,72.88,"Mumbai","IN"],[12.97,77.59,"Bengaluru","IN"],[25.2,55.27,"Dubai","AE"],[-23.55,-46.63,"São Paulo","BR"],[-34.6,-58.38,"Buenos Aires","AR"],[19.43,-99.13,"Mexico City","MX"],[-26.2,28.05,"Johannesburg","ZA"],[6.52,3.38,"Lagos","NG"],[41.01,28.98,"Istanbul","TR"],[39.74,-104.99,"Denver","US"],[33.75,-84.39,"Atlanta","US"],[45.5,-73.57,"Montreal","CA"],[53.35,-6.26,"Dublin","IE"]];
+class Demo {
+  constructor() {
+    this.t0 = Date.now();
+    this.zone = 10390410; this.prime = 2297891; this.region = 5579751;
+    this.blocks = []; this.events = []; this.logs = []; this.seq = 0;
+    this.nextBlock = Date.now() + 1500;
+    this.hash = () => "0x" + Array.from({ length: 64 }, () => "0123456789abcdef"[(Math.random() * 16) | 0]).join("");
+    this.peers = Array.from({ length: 64 }, (_, i) => {
+      const c = CITIES[i % CITIES.length];
+      return { ip: "203.0." + ((i * 37) % 250) + "." + ((i * 91) % 250), port: 4002, dir: i % 7 ? "in" : "out",
+        place: { lat: c[0] + (Math.random() - 0.5) * 3, lon: c[1] + (Math.random() - 0.5) * 3, city: c[2], country: c[3] }, since_ms: Date.now() - Math.random() * 3.6e6 };
+    });
+    for (let i = 0; i < 40; i++) this.mine(Date.now() - (40 - i) * 5000, true);
+    for (let i = 0; i < 30; i++) this.log("INFO", "rsq_node::node: network peers=" + (80 + (i % 5)));
+  }
+  log(level, msg) {
+    const ts = new Date().toISOString().replace("Z", "").slice(0, 23) + "Z";
+    this.logs.push({ seq: ++this.seq, level, text: `${ts}  ${level.padStart(5)} ${msg}` });
+    if (this.logs.length > 400) this.logs.shift();
+  }
+  mine(t, quiet) {
+    this.zone++;
+    const r = Math.random();
+    const order = r < 0.12 ? 0 : r < 0.45 ? 1 : 2;
+    if (order <= 1) this.region++;
+    if (order === 0) this.prime++;
+    const prev = this.blocks[this.blocks.length - 1];
+    const b = { number: this.zone, hash: this.hash(), parent: prev ? prev.hash : this.hash(), timestamp: Math.floor(t / 1000), seen_ms: t,
+      txs: Math.floor(Math.random() ** 3 * 40), etxs: Math.floor(Math.random() * 18), workshares: Math.floor(Math.random() * 14),
+      gas_used: Math.floor(Math.random() ** 2 * 18e6), gas_limit: 50e6, base_fee: String(Math.floor(2.6e13 + Math.random() * 2e12)),
+      order, difficulty: String(1.038e12 + Math.floor(Math.random() * 4e9)), coinbase: "0x00" + this.hash().slice(4, 42), auxpow: true,
+      prime_number: this.prime, region_number: this.region, exchange_rate: "13264669140000000000", size: 3000 + Math.floor(Math.random() * 9000) };
+    this.blocks.push(b);
+    if (this.blocks.length > 96) this.blocks.shift();
+    if (!quiet) {
+      this.log("INFO", `rsq_chain::chaincore: Appended new block number=${b.number} hash=${b.hash.slice(0, 18)}… txs=${b.txs} etxs=${b.etxs} workshares=${b.workshares}`);
+      if (order === 0) this.events.push({ t_ms: t, kind: "prime", text: `Prime block ${this.prime} (zone ${b.number})`, number: b.number });
+      if (order === 1) this.events.push({ t_ms: t, kind: "region", text: `Region block ${this.region} (zone ${b.number})`, number: b.number });
+      if (Math.random() < 0.08) this.log("WARN", "rsq_chain::indexer: ChainIndexer: Reorging the utxo indexer len=1");
+      if (this.events.length > 64) this.events.shift();
+    }
+  }
+  tick() {
+    const now = Date.now();
+    while (now >= this.nextBlock) { this.mine(this.nextBlock, false); this.nextBlock += 1000 + -Math.log(Math.random()) * 4200; }
+    if (Math.random() < 0.5) this.log("INFO", `rsq_miner::worker: Workshare accepted hash=${this.hash().slice(0, 18)}… number=${this.zone + 1}`);
+    const wob = (x, p) => x * (1 + (Math.random() - 0.5) * p);
+    const last = this.blocks[this.blocks.length - 1];
+    return {
+      now_ms: now,
+      node: { label: "DEMO NODE", rpc: "demo", location: "Cyprus-1", chain_id: 9, online: true, error: null, log_file: "nodelogs/global.log" },
+      chains: { prime: { number: this.prime, hash: "", timestamp: last.timestamp - (last.order === 0 ? 0 : 9) },
+        region: { number: this.region, hash: "", timestamp: last.timestamp - (last.order <= 1 ? 0 : 4) },
+        zone: { number: last.number, hash: last.hash, timestamp: last.timestamp } },
+      blocks: this.blocks,
+      mining: { avg_block_time: wob(5.1, 0.05), blocks_analyzed: 178,
+        kawpow: { hashrate: wob(2.43e11, 0.06), difficulty: "1038275705430", share_time: wob(5.1, 0.05) },
+        sha: { hashrate: wob(2.5e17, 0.08), difficulty: "220452383356020829", share_time: wob(1.25, 0.1) },
+        scrypt: { hashrate: wob(7.08e12, 0.08), difficulty: "14544668614928", share_time: wob(1.3, 0.1) },
+        base_block_reward: "70.4023", estimated_block_reward: "105.3384", workshare_reward: "11.7042", quai_supply: "1124728606", avg_tx_fees: "17.4680" },
+      pending_shares: { kawpow: (Math.random() * 3) | 0, sha: (Math.random() * 10) | 0, scrypt: (Math.random() * 8) | 0, progpow: 0 },
+      peers: { count: 86, inbound: 76, outbound: 10, list: this.peers, geo: "db", note: null, here: { lat: 39.1, lon: -94.6, city: "", country: "" } },
+      compare: { label: "GO-QUAI", rpc: "demo", height: last.number, online: true, compared: 64, matched: 64, last_mismatch: null },
+      events: this.events, logs: this.logs, log_seq: this.seq,
+    };
+  }
+}
+
+// ---------------------------------------------------------------- state & polling
+let lastState = null, demo = null, fails = 0, lastSeq = 0, lastEventT = 0, firstLoad = true, lastBlockNum = 0;
+let pollAt = performance.now();
+const hist = { kawpow: [], sha: [], scrypt: [] };
+let polls = 0;
+async function poll() {
+  let s = null;
+  polls++;
+  // Live first; while on demo data, look for a server every 10 s.
+  if (!demo || polls % 10 === 0) {
+    try {
+      const r = await fetch("api/state", { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      s = await r.json();
+      if (!s || !s.node) throw new Error("not a quai-dash server");
+      if (demo) { demo = null; lastSeq = 0; lastBlockNum = 0; firstLoad = true; $("log").replaceChildren(); toast("quai-dash server found: live data"); }
+      fails = 0;
+    } catch (e) {
+      s = null;
+      // A page that has never seen live data switches at once; a live
+      // page rides out a few failed polls (shown as OFFLINE) first.
+      if (!demo && (++fails >= (lastState ? 5 : 1))) { demo = new Demo(); toast("No quai-dash server here: showing demo data"); }
+    }
+  }
+  if (demo) s = demo.tick();
+  if (s) ingest(s);
+}
+function ingest(s) {
+  pollAt = performance.now();
+  // History for the hashrate sparklines.
+  if (s.mining) for (const k of ["kawpow", "sha", "scrypt"]) { hist[k].push(s.mining[k].hashrate); if (hist[k].length > 90) hist[k].shift(); }
+  // New blocks → pulses.
+  const top = s.blocks.length ? s.blocks[s.blocks.length - 1].number : 0;
+  if (lastBlockNum && top > lastBlockNum) onNewBlock(s.blocks[s.blocks.length - 1]);
+  lastBlockNum = top;
+  // New events → cinematics (never on the first load).
+  for (const ev of s.events) {
+    if (ev.t_ms > lastEventT) { if (!firstLoad) onEvent(ev); }
+  }
+  if (s.events.length) lastEventT = Math.max(lastEventT, s.events[s.events.length - 1].t_ms);
+  lastState = s;
+  render(s, false);
+  firstLoad = false;
+}
+let pulse = 0, pulseOrder = 2;
+function onNewBlock(b) { pulse = performance.now(); pulseOrder = b.order; }
+
+// ---------------------------------------------------------------- render (DOM)
+function render(s, full) {
+  const st = $("status");
+  st.classList.toggle("off", !s.node.online);
+  st.classList.toggle("demo", !!demo);
+  $("statustext").textContent = demo ? "DEMO DATA" : s.node.online ? "LIVE" : "OFFLINE";
+  $("nodelabel").textContent = s.node.label;
+  $("nodeloc").textContent = (s.node.location ? s.node.location + " · " : "") + (demo ? "simulated" : s.node.rpc);
+  const zone = s.chains.zone;
+  const h = $("height"); h.dataset.scr = "1";
+  setNum(h, zone ? fmtInt(zone.number) : "— — —");
+  $("herohash").textContent = zone ? zone.hash.slice(0, 10) + "…" + zone.hash.slice(-6) : (s.node.error || "");
+  const last = s.blocks[s.blocks.length - 1];
+  $("avgbt").innerHTML = s.mining ? s.mining.avg_block_time.toFixed(2) + "<small>s</small>" : "—";
+  $("lasttx").textContent = last ? last.txs + (last.etxs ? " +" + last.etxs + " etx" : "") : "—";
+  $("lastws").textContent = last ? last.workshares : "—";
+  $("lastgas").innerHTML = last ? (100 * last.gas_used / Math.max(1, last.gas_limit)).toFixed(1) + "<small>%</small>" : "—";
+  // Tiers.
+  for (const t of ["prime", "region", "zone"]) {
+    const c = s.chains[t], el = $("tier-" + t);
+    const n = el.querySelector(".n"); n.dataset.scr = "1";
+    setNum(n, c ? fmtInt(c.number) : "—");
+  }
+  // Algorithms.
+  const m = s.mining, p = s.pending_shares;
+  let approved = 0;
+  for (const k of ["kawpow", "sha", "scrypt"]) {
+    const el = $("algo-" + k);
+    const a = m ? m[k] : null;
+    el.querySelector(".hr").textContent = a ? si(a.hashrate) : "—";
+    el.querySelector(".st").textContent = a && a.share_time ? a.share_time.toFixed(2) + " s" : "—";
+    el.querySelector(".pd").textContent = p[k];
+    const ok = !!(a && a.hashrate > 0);
+    if (ok) approved++;
+    el.classList.toggle("denied", !ok);
+    el.querySelector(".verdict").innerHTML = ok ? '<span class="jp">承認</span>APPROVED' : '<span class="jp">否決</span>DENIED';
+  }
+  $("consensus").innerHTML = "合議 · <b style=\"color:" + (approved === 3 ? "var(--ok)" : "var(--bad)") + "\">" + approved + " / 3 APPROVED</b>";
+  $("algoaside").textContent = m ? "over " + m.blocks_analyzed + " blocks" : "";
+  // Peers.
+  $("pin").textContent = s.peers.inbound || "0";
+  $("pout").textContent = s.peers.outbound || "0";
+  $("ploc").textContent = s.peers.list.filter((q) => q.place).length + "/" + s.peers.list.length;
+  const note = s.peers.note || (s.peers.list.length && s.peers.geo === "off" ? "Peer locations are off: start quai-dash with --geoip-db <GeoLite2-City.mmdb> or --geoip-online." : "");
+  $("mapnote").hidden = !note; $("mapnote").textContent = note;
+  // Economy.
+  $("e-base").textContent = last ? gwei(last.base_fee) : "—";
+  $("e-rate").textContent = last ? weiStr(last.exchange_rate, 4) : "—";
+  $("e-reward").innerHTML = m ? m.estimated_block_reward + "<small>QUAI</small>" : "—";
+  $("e-ws").innerHTML = m ? m.workshare_reward + "<small>QUAI</small>" : "—";
+  $("e-fees").innerHTML = m ? m.avg_tx_fees + "<small>QUAI</small>" : "—";
+  $("e-supply").innerHTML = m ? Number(m.quai_supply).toLocaleString("en-US") + "<small>QUAI</small>" : "—";
+  $("e-chain").textContent = s.node.chain_id ?? "—";
+  // Sync.
+  const c = s.compare;
+  if (c) {
+    const pct = c.compared ? (100 * c.matched / c.compared) : 0;
+    $("synctitle").textContent = look === "angel" ? "Synchronization ratio" : "Sync ratio";
+    $("syncbig").textContent = c.compared ? pct.toFixed(1) + "%" : "—";
+    $("syncbig").style.color = pct >= 100 ? "var(--ok)" : "var(--bad)";
+    $("syncbar").style.width = pct + "%";
+    $("syncsub").innerHTML = `<span>vs <b>${c.label}</b> · ${c.online ? "height " + fmtInt(c.height) : "offline"}</span><span>${c.matched}/${c.compared} recent blocks identical</span>` +
+      (c.last_mismatch ? `<span style="color:var(--bad)">last mismatch at ${fmtInt(c.last_mismatch)}</span>` : "");
+  } else {
+    const avg = m ? m.avg_block_time : 0;
+    const tempo = avg ? Math.min(100, 100 * 5 / avg) : 0;
+    $("synctitle").textContent = "Block tempo";
+    $("syncbig").textContent = avg ? tempo.toFixed(1) + "%" : "—";
+    $("syncbig").style.color = tempo > 90 ? "var(--ok)" : "var(--warn)";
+    $("syncbar").style.width = tempo + "%";
+    $("syncsub").innerHTML = "<span>5 s target vs measured average</span><span>Add <b>--compare URL</b> to check every block against a second node.</span>";
+  }
+  // Logs.
+  $("logfile").textContent = s.node.log_file ? s.node.log_file.split("/").slice(-2).join("/") : "start with --logs <nodelogs dir>";
+  if (!paused) appendLogs(s.logs);
+  // Events.
+  renderEvents(s.events);
+}
+let logFilter = "all", paused = false;
+const HL = /(Appended new block|Workshare accepted|prime|region|reorg|Reorging|peers=\d+|number=\d+)/gi;
+function esc(t) { return t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]); }
+function appendLogs(lines) {
+  const box = $("log");
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const frag = document.createDocumentFragment();
+  for (const l of lines) {
+    if (l.seq <= lastSeq) continue;
+    lastSeq = l.seq;
+    if (logFilter === "warn" && !(l.level === "WARN" || l.level === "ERROR")) continue;
+    const d = document.createElement("div");
+    d.className = (l.level || "INFO") + (firstLoad ? "" : " fresh");
+    d.innerHTML = esc(l.text).replace(HL, "<mark>$1</mark>");
+    frag.appendChild(d);
+  }
+  box.appendChild(frag);
+  while (box.childElementCount > 400) box.firstElementChild.remove();
+  if (atBottom || firstLoad) box.scrollTop = box.scrollHeight;
+  if (!box.childElementCount) box.innerHTML = '<div class="empty">No log lines yet. Run quai-dash with --logs pointing at the node\'s nodelogs directory.</div>';
+  else box.querySelector(".empty")?.remove();
+}
+function relog() { lastSeq = 0; $("log").replaceChildren(); if (lastState) appendLogs(lastState.logs); }
+$("f-all").onclick = () => { logFilter = "all"; $("f-all").setAttribute("aria-pressed", "true"); $("f-warn").setAttribute("aria-pressed", "false"); relog(); };
+$("f-warn").onclick = () => { logFilter = "warn"; $("f-warn").setAttribute("aria-pressed", "true"); $("f-all").setAttribute("aria-pressed", "false"); relog(); };
+$("f-pause").onclick = () => { paused = !paused; $("f-pause").setAttribute("aria-pressed", String(paused)); };
+function renderEvents(evs) {
+  const box = $("evlist");
+  if (!evs.length) { box.innerHTML = '<div class="empty">Prime and region blocks, reorgs, stalls and mismatches appear here.</div>'; return; }
+  box.innerHTML = evs.slice(-40).reverse().map((e) => {
+    const t = new Date(e.t_ms).toLocaleTimeString("en-GB", { hour12: false });
+    return `<div class="ev ${e.kind}"><time>${t}</time><span>${esc(e.text)}</span></div>`;
+  }).join("");
+}
+
+// ---------------------------------------------------------------- canvases
+function sinceLast() {
+  const s = lastState;
+  if (!s || !s.chains.zone) return 0;
+  const base = (s.now_ms - s.chains.zone.timestamp * 1000) / 1000;
+  return Math.max(0, base + (performance.now() - pollAt) / 1000);
+}
+const SEG = { "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg" };
+function seg7(ctx, x, y, w, h, ch, on, off) {
+  const t = w * 0.16, segs = SEG[ch] || "";
+  const H = (sx, sy, len) => { ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + t / 2, sy - t / 2); ctx.lineTo(sx + len - t / 2, sy - t / 2); ctx.lineTo(sx + len, sy); ctx.lineTo(sx + len - t / 2, sy + t / 2); ctx.lineTo(sx + t / 2, sy + t / 2); ctx.closePath(); ctx.fill(); };
+  const V = (sx, sy, len) => { ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + t / 2, sy + t / 2); ctx.lineTo(sx + t / 2, sy + len - t / 2); ctx.lineTo(sx, sy + len); ctx.lineTo(sx - t / 2, sy + len - t / 2); ctx.lineTo(sx - t / 2, sy + t / 2); ctx.closePath(); ctx.fill(); };
+  const sk = 0.12 * h; // italic skew
+  ctx.save(); ctx.translate(x, y); ctx.transform(1, 0, -sk / h, 1, sk, 0);
+  const parts = { a: () => H(t / 2, t / 2, w - t), g: () => H(t / 2, h / 2, w - t), d: () => H(t / 2, h - t / 2, w - t),
+    f: () => V(t / 2, t / 2, h / 2 - t / 2), b: () => V(w - t / 2, t / 2, h / 2 - t / 2), e: () => V(t / 2, h / 2, h / 2 - t / 2), c: () => V(w - t / 2, h / 2, h / 2 - t / 2) };
+  for (const k of "abcdefg") { ctx.fillStyle = segs.includes(k) ? on : off; parts[k](); }
+  ctx.restore();
+}
+function drawTimer(now) {
+  const { ctx, w, h } = sizeCanvas($("timer"));
+  ctx.clearRect(0, 0, w, h);
+  const t = sinceLast();
+  const avg = lastState && lastState.mining ? lastState.mining.avg_block_time : 5;
+  const late = t > avg * 3;
+  const acc = css("--acc"), hot = css("--hot"), ok = css("--ok"), dim = css("--dim"), fg = css("--fg");
+  if (look === "angel") {
+    // Operation clock: MM:SS:CC in seven segments.
+    const mm = Math.floor(t / 60) % 100, ss = Math.floor(t) % 60, cc = Math.floor((t % 1) * 100);
+    const txt = String(mm).padStart(2, "0") + ":" + String(ss).padStart(2, "0") + ":" + String(cc).padStart(2, "0");
+    const on = late ? hot : (t < 0.6 ? ok : css("--warn")), off = hexA(css("--acc"), 0.08);
+    ctx.fillStyle = hexA(acc, 0.9); ctx.font = `700 13px ${css("--label")}`; ctx.textBaseline = "top";
+    ctx.fillText("SINCE LAST BLOCK", 6, 4);
+    ctx.fillStyle = late ? hot : dim; ctx.textAlign = "right"; ctx.fillText(late ? "ACTIVE · OVERDUE" : "ACTIVE", w - 6, 4); ctx.textAlign = "left";
+    const dw = Math.min(34, (w - 30) / 7.4), dh = dw * 1.9, y = 30;
+    let x = 8;
+    for (const ch of txt) {
+      if (ch === ":") { ctx.fillStyle = on; ctx.fillRect(x + dw * 0.12, y + dh * 0.3, dw * 0.16, dw * 0.16); ctx.fillRect(x + dw * 0.12, y + dh * 0.66, dw * 0.16, dw * 0.16); x += dw * 0.5; continue; }
+      seg7(ctx, x, y, dw, dh, ch, on, off); x += dw * 1.18;
+    }
+    // Battery bars: the fraction of the average block time elapsed.
+    const bars = 20, f = Math.min(1, t / avg);
+    for (let i = 0; i < bars; i++) { ctx.fillStyle = i / bars < f ? (late ? hot : acc) : hexA(acc, 0.12); ctx.fillRect(8 + i * ((w - 16) / bars), y + dh + 14, (w - 16) / bars - 3, 9); }
+    return;
+  }
+  // GHOST: dive ring.
+  const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 10;
+  ctx.lineWidth = 1; ctx.strokeStyle = hexA(acc, 0.25);
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, r - 14, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 60; i++) { // ticks
+    const a = (i / 60) * Math.PI * 2 - Math.PI / 2, l = i % 5 ? 4 : 9;
+    ctx.strokeStyle = hexA(acc, i % 5 ? 0.25 : 0.6);
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.lineTo(cx + Math.cos(a) * (r - l), cy + Math.sin(a) * (r - l)); ctx.stroke();
+  }
+  const f = Math.min(1, t / (avg * 2));
+  ctx.lineWidth = 4; ctx.strokeStyle = late ? hot : acc; ctx.shadowColor = late ? hot : acc; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(cx, cy, r - 7, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0;
+  // rotating segments
+  const rot = (now / 4000) % (Math.PI * 2);
+  ctx.lineWidth = 2; ctx.strokeStyle = hexA(acc, 0.5);
+  for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.arc(cx, cy, r - 26, rot + k * 2.09, rot + k * 2.09 + 0.7); ctx.stroke(); }
+  // new-block ping
+  const age = (now - pulse) / 1000;
+  if (pulse && age < 1.4) {
+    const col = pulseOrder === 0 ? css("--tier-prime") : pulseOrder === 1 ? css("--tier-region") : acc;
+    ctx.strokeStyle = hexA(col.startsWith("#") ? col : "#5ef6e0", 1 - age / 1.4); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, 20 + age * r * 0.8, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.fillStyle = late ? hot : fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `500 34px ${css("--display")}`; ctx.fillText(t.toFixed(1), cx, cy - 4);
+  ctx.font = `11px ${css("--mono")}`; ctx.fillStyle = dim; ctx.fillText("SEC SINCE BLOCK", cx, cy + 22);
+  ctx.textAlign = "left";
+}
+function drawSpark() {
+  const { ctx, w, h } = sizeCanvas($("spark"));
+  ctx.clearRect(0, 0, w, h);
+  const s = lastState; if (!s || s.blocks.length < 3) return;
+  const bs = s.blocks.slice(-48), iv = [];
+  for (let i = 1; i < bs.length; i++) iv.push(Math.max(0, bs[i].timestamp - bs[i - 1].timestamp));
+  const max = Math.max(10, ...iv), acc = css("--acc");
+  const x = (i) => (i / (iv.length - 1)) * (w - 4) + 2, y = (v) => h - 3 - (v / max) * (h - 8);
+  ctx.strokeStyle = hexA(acc, 0.18); ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(0, y(5)); ctx.lineTo(w, y(5)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = hexA(acc, 0.12);
+  ctx.beginPath(); ctx.moveTo(x(0), h); iv.forEach((v, i) => ctx.lineTo(x(i), y(v))); ctx.lineTo(x(iv.length - 1), h); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = acc; ctx.lineWidth = 1.5;
+  ctx.beginPath(); iv.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)))); ctx.stroke();
+  const li = iv.length - 1; ctx.fillStyle = acc; ctx.beginPath(); ctx.arc(x(li), y(iv[li]), 3, 0, 7); ctx.fill();
+  ctx.fillStyle = css("--dim"); ctx.font = `10px ${css("--mono")}`; ctx.fillText("block intervals · 5 s target", 4, 10);
+}
+function drawAlgos(now) {
+  for (const k of ["kawpow", "sha", "scrypt"]) {
+    const cv = $("algo-" + k).querySelector("canvas");
+    const { ctx, w, h } = sizeCanvas(cv);
+    ctx.clearRect(0, 0, w, h);
+    const d = hist[k], acc = look === "angel" ? css("--warn") : css("--acc");
+    if (d.length > 1) {
+      const mx = Math.max(...d), mn = Math.min(...d), span = mx - mn || mx || 1;
+      ctx.strokeStyle = acc; ctx.lineWidth = 1.2; ctx.beginPath();
+      d.forEach((v, i) => { const X = (i / (d.length - 1)) * w, Y = h - 3 - ((v - mn) / span) * (h - 6); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+      ctx.stroke();
+    }
+    // share flow: dots streaming at a speed set by the share time
+    const st = lastState && lastState.mining ? lastState.mining[k].share_time : 0;
+    if (st > 0) {
+      const speed = 1 / st;
+      ctx.fillStyle = hexA(acc, 0.8);
+      for (let i = 0; i < 5; i++) { const X = (((now / 1000) * speed * 0.25 + i / 5) % 1) * w; ctx.fillRect(X, h - 2, 6, 2); }
+    }
+  }
+}
+// Map: GHOST rotates a dot globe; ANGEL draws a flat hex-dot map with reticles.
+let rotLon = -40, dragging = null;
+$("map").addEventListener("pointerdown", (e) => { dragging = { x: e.clientX, lon: rotLon }; $("map").setPointerCapture(e.pointerId); });
+$("map").addEventListener("pointermove", (e) => { if (dragging) rotLon = dragging.lon - (e.clientX - dragging.x) * 0.4; });
+$("map").addEventListener("pointerup", () => { dragging = null; });
+function drawMap(now) {
+  const { ctx, w, h } = sizeCanvas($("map"));
+  ctx.clearRect(0, 0, w, h);
+  const s = lastState, acc = css("--acc"), hot = css("--hot");
+  const peers = s ? s.peers.list.filter((p) => p.place) : [];
+  const here = s && s.peers.here;
+  if (look === "angel") {
+    const mw = Math.min(w, h * 2), mh = mw / 2, ox = (w - mw) / 2, oy = (h - mh) / 2;
+    const P = (lat, lon) => [ox + ((lon + 180) / 360) * mw, oy + ((90 - lat) / 180) * mh];
+    ctx.strokeStyle = hexA(acc, 0.12); ctx.lineWidth = 1;
+    ctx.fillStyle = hexA(acc, 0.7); ctx.font = `600 10px ${css("--label")}`;
+    for (let lon = -150; lon <= 180; lon += 30) { const [x] = P(0, lon); ctx.beginPath(); ctx.moveTo(x, oy); ctx.lineTo(x, oy + mh); ctx.stroke(); }
+    for (let lat = -60; lat <= 60; lat += 30) { const [, y] = P(lat, 0); ctx.beginPath(); ctx.moveTo(ox, y); ctx.lineTo(ox + mw, y); ctx.stroke(); ctx.fillText((lat > 0 ? "N" : lat < 0 ? "S" : "") + Math.abs(lat), ox + 3, y - 3); }
+    const cell = mw / LAND_W;
+    ctx.fillStyle = hexA(acc, 0.38);
+    for (let i = 0; i < LAND_PTS.length; i += 1) { const [la, lo] = LAND_PTS[i]; const [x, y] = P(la, lo); if (((x / cell) | 0) % 2 === 0 && ((y / cell) | 0) % 2 === 0) ctx.fillRect(x, y, Math.max(1.2, cell * 1.3), Math.max(1.2, cell * 1.3)); }
+    // sweep
+    const sx = ox + ((now / 60) % mw);
+    const g = ctx.createLinearGradient(sx - 60, 0, sx, 0); g.addColorStop(0, hexA(acc, 0)); g.addColorStop(1, hexA(acc, 0.25));
+    ctx.fillStyle = g; ctx.fillRect(sx - 60, oy, 60, mh);
+    for (const p of peers) {
+      const [x, y] = P(p.place.lat, p.place.lon);
+      const near = Math.abs(x - sx) < 70;
+      ctx.strokeStyle = near ? css("--warn") : hexA(acc, 0.8); ctx.lineWidth = 1;
+      const r = near ? 7 : 4;
+      ctx.strokeRect(x - r, y - r, r * 2, r * 2);
+      ctx.beginPath(); ctx.moveTo(x - r - 4, y); ctx.lineTo(x - r, y); ctx.moveTo(x + r, y); ctx.lineTo(x + r + 4, y); ctx.stroke();
+      if (near && p.place.city) { ctx.fillStyle = css("--warn"); ctx.fillText(p.place.city.toUpperCase(), x + 10, y - 6); }
+    }
+    if (here) { const [x, y] = P(here.lat, here.lon); ctx.fillStyle = hot; ctx.beginPath(); ctx.arc(x, y, 5 + 2 * Math.sin(now / 200), 0, 7); ctx.fill(); ctx.fillText("THIS NODE", x + 9, y + 4); }
+    ctx.fillStyle = hexA(acc, 0.9); ctx.font = `700 12px ${css("--label")}`; ctx.fillText("TARGETS · " + peers.length, ox + 70, oy + 14);
+    return;
+  }
+  // GHOST globe (orthographic).
+  if (!dragging) rotLon += 0.04;
+  const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.42, tilt = 0.32;
+  const lon0 = (rotLon * Math.PI) / 180;
+  const proj = (lat, lon) => {
+    const la = (lat * Math.PI) / 180, lo = (lon * Math.PI) / 180 - lon0;
+    const x = Math.cos(la) * Math.sin(lo), y0 = Math.sin(la), z0 = Math.cos(la) * Math.cos(lo);
+    const y = y0 * Math.cos(tilt) - z0 * Math.sin(tilt), z = y0 * Math.sin(tilt) + z0 * Math.cos(tilt);
+    return [cx + x * R, cy - y * R, z];
+  };
+  const g = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.25);
+  g.addColorStop(0, "rgba(10,60,70,.35)"); g.addColorStop(0.8, "rgba(10,60,70,.08)"); g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 1.25, 0, 7); ctx.fill();
+  ctx.strokeStyle = hexA(acc, 0.3); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+  ctx.strokeStyle = hexA(acc, 0.07);
+  for (let lat = -60; lat <= 60; lat += 30) { ctx.beginPath(); let started = false; for (let lon = -180; lon <= 180; lon += 6) { const [x, y, z] = proj(lat, lon); if (z < 0) { started = false; continue; } started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true; } ctx.stroke(); }
+  for (const [la, lo] of LAND_PTS) {
+    const [x, y, z] = proj(la, lo);
+    if (z <= 0) continue;
+    ctx.fillStyle = hexA(acc, 0.12 + 0.55 * z);
+    ctx.fillRect(x, y, 1.6, 1.6);
+  }
+  const origin = here ? proj(here.lat, here.lon) : null;
+  const t = now / 1000;
+  peers.forEach((p, i) => {
+    const [x, y, z] = proj(p.place.lat, p.place.lon);
+    if (z <= 0) return;
+    if (origin && origin[2] > 0) {
+      // arc lifted off the surface toward the viewer
+      const mx = (x + origin[0]) / 2, my = (y + origin[1]) / 2 - Math.hypot(x - origin[0], y - origin[1]) * 0.25;
+      ctx.strokeStyle = hexA(acc, 0.18 * z); ctx.beginPath(); ctx.moveTo(origin[0], origin[1]); ctx.quadraticCurveTo(mx, my, x, y); ctx.stroke();
+      const u = (t * 0.35 + i * 0.137) % 1, iu = 1 - u;
+      const px = iu * iu * origin[0] + 2 * iu * u * mx + u * u * x, py = iu * iu * origin[1] + 2 * iu * u * my + u * u * y;
+      ctx.fillStyle = hexA(acc, 0.9 * z); ctx.fillRect(px - 1, py - 1, 2.5, 2.5);
+    }
+    const pulseR = 3 + 2 * Math.sin(t * 3 + i);
+    ctx.fillStyle = p.dir === "out" ? css("--warn") : acc; ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 10 * z;
+    ctx.beginPath(); ctx.arc(x, y, Math.max(1.5, pulseR * z), 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  });
+  if (origin && origin[2] > 0) { ctx.fillStyle = hot; ctx.beginPath(); ctx.arc(origin[0], origin[1], 4, 0, 7); ctx.fill(); }
+  // anonymous peers (no locations): an orbit of nodes
+  if (s && !peers.length && s.peers.count) {
+    const n = Math.min(s.peers.count, 120);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + t * 0.15, rr = R * (1.08 + 0.06 * Math.sin(i * 1.7));
+      ctx.fillStyle = hexA(acc, 0.6); ctx.fillRect(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.35, 2, 2);
+    }
+  }
+  ctx.fillStyle = css("--dim"); ctx.font = `11px ${css("--mono")}`;
+  ctx.fillText("DRAG TO ROTATE", 6, h - 8);
+}
+let tapeHover = -1, tapeLayout = [];
+$("tape").addEventListener("pointermove", (e) => {
+  const r = $("tape").getBoundingClientRect(), x = e.clientX - r.left;
+  tapeHover = tapeLayout.findIndex((b) => x >= b.x - 2 && x <= b.x + b.w + 2);
+  const b = tapeLayout[tapeHover];
+  $("readout").textContent = b ? `#${fmtInt(b.b.number)} · ${["PRIME", "REGION", "ZONE"][b.b.order]} · ${b.b.txs} txs · ${b.b.etxs} etxs · ${b.b.workshares} workshares · gas ${(100 * b.b.gas_used / Math.max(1, b.b.gas_limit)).toFixed(1)}% · ${b.b.hash.slice(0, 18)}…` : "Point at a block for details.";
+});
+$("tape").addEventListener("pointerleave", () => { tapeHover = -1; });
+function drawTape(now) {
+  const { ctx, w, h } = sizeCanvas($("tape"));
+  ctx.clearRect(0, 0, w, h);
+  const s = lastState; if (!s || !s.blocks.length) return;
+  const bs = s.blocks, nowS = s.now_ms / 1000 + (performance.now() - pollAt) / 1000;
+  const span = Math.max(240, nowS - bs[0].timestamp + 5), x0 = nowS - span;
+  const X = (ts) => ((ts - x0) / span) * (w - 10) + 2;
+  const base = h - 18, top = 16, col = [css("--tier-prime"), css("--tier-region"), css("--tier-zone")];
+  ctx.strokeStyle = hexA(css("--acc"), 0.12); ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const y = top + ((base - top) * i) / 4; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  ctx.fillStyle = css("--dim"); ctx.font = `10px ${css("--mono")}`;
+  for (let m = 0; m <= span; m += 60) { const x = X(nowS - m); ctx.fillText(m ? "-" + m / 60 + "m" : "now", Math.max(0, x - 12), h - 4); }
+  const bw = Math.max(3, Math.min(10, (w / (span / 5)) * 0.55));
+  tapeLayout = [];
+  bs.forEach((b, i) => {
+    const x = X(b.timestamp) - bw / 2;
+    const f = Math.max(0.06, b.gas_used / Math.max(1, b.gas_limit));
+    const bh = (base - top) * Math.min(1, 0.08 + f * 2.2);
+    const fresh = i === bs.length - 1 ? Math.max(0, 1 - (now - pulse) / 900) : 0;
+    ctx.fillStyle = hexA(col[b.order] || col[2], i === tapeHover ? 1 : 0.75);
+    ctx.fillRect(x, base - bh, bw, bh);
+    if (fresh > 0) { ctx.fillStyle = hexA("#ffffff", fresh * 0.8); ctx.fillRect(x - 2, top - 6, bw + 4, base - top + 6); }
+    ctx.fillStyle = hexA(col[2], 0.8);
+    for (let k = 0; k < Math.min(b.workshares, 12); k++) ctx.fillRect(x + bw / 2 - 1, base - bh - 5 - k * 4, 2, 2);
+    tapeLayout.push({ x, w: bw, b });
+  });
+}
+
+// ---------------------------------------------------------------- loop
+function frame(now) {
+  drawTimer(now); drawSpark(); drawAlgos(now); drawMap(now); drawTape(now);
+  // Age bars and clock.
+  if (lastState) {
+    const avg = { prime: 25, region: 10, zone: 5 };
+    const nowS = lastState.now_ms / 1000 + (performance.now() - pollAt) / 1000;
+    for (const t of ["prime", "region", "zone"]) {
+      const c = lastState.chains[t];
+      const age = c ? Math.max(0, nowS - c.timestamp) : 0;
+      $("tier-" + t).querySelector(".age i").style.width = Math.min(100, (100 * age) / (avg[t] * 3)) + "%";
+    }
+  }
+  $("clock").textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- boot
+setLook(look);
+if (!reduceMotion) {
+  const b = document.createElement("div");
+  b.className = "boot";
+  b.textContent = "> DIVE // linking node RPC · chain heads · workshares · peers · log";
+  document.body.appendChild(b);
+  setTimeout(() => b.remove(), 3500);
+}
+poll();
+setInterval(poll, 1000);
+requestAnimationFrame(frame);
+</script>

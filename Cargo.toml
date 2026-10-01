@@ -1,0 +1,25 @@
+[package]
+name = "rsq-dash"
+description = "quai-dash: a live web and terminal monitor for Quai nodes (rs-quai or go-quai) over their JSON-RPC, logs and connections."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "quai-dash"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+tiny_http = "0.12"
+ratatui = "0.30"
+crossterm = "0.29"
+maxminddb = "0.32"
