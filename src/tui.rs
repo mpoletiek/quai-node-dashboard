@@ -93,6 +93,20 @@ struct App {
     zone_changed: u64,
     hist: [VecDeque<u64>; 3],
     hist_key: String,
+    /// Pixel map on (kitty graphics protocol).
+    gfx: bool,
+    /// Where the last frame left room for the pixel map.
+    map_rect: std::cell::Cell<Option<Rect>>,
+}
+
+/// Terminal options for the live TUI.
+pub struct Options {
+    /// Draw the peer map as an image (kitty graphics protocol).
+    pub graphics: bool,
+    /// Detected terminal.
+    pub kind: crate::term::Kind,
+    /// Desktop notifications for alerts.
+    pub notify: bool,
 }
 
 impl App {
@@ -108,6 +122,8 @@ impl App {
             zone_changed: 0,
             hist: [VecDeque::new(), VecDeque::new(), VecDeque::new()],
             hist_key: String::new(),
+            gfx: false,
+            map_rect: std::cell::Cell::new(None),
         }
     }
 
@@ -177,19 +193,103 @@ fn scale_rate(h: f64) -> u64 {
 }
 
 /// Runs until the user quits.
-pub fn run(state: Arc<Mutex<State>>, theme: Theme) -> Result<(), String> {
+pub fn run(state: Arc<Mutex<State>>, theme: Theme, opts: Options) -> Result<(), String> {
     let mut terminal = ratatui::try_init().map_err(|e| format!("terminal: {e}"))?;
-    let result = event_loop(&mut terminal, &state, theme);
+    let result = event_loop(&mut terminal, &state, theme, &opts);
+    if opts.graphics {
+        let _ = crate::term::delete_image(&mut std::io::stdout(), crate::term::MAP_IMAGE);
+    }
     ratatui::restore();
     result
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, state: &Arc<Mutex<State>>, theme: Theme) -> Result<(), String> {
+/// Renders the pixel map for `rect` and places it, or removes it.
+struct PixelMap {
+    cell: (u32, u32),
+    placed: bool,
+    last: Option<(Rect, Theme)>,
+}
+
+impl PixelMap {
+    fn update(&mut self, app: &App, s: &State) {
+        use crate::raster::{MapColors, Pin, flat, globe};
+        let mut out = std::io::stdout();
+        let overlay = app.help || app.tick < BOOT_TICKS || app.flash.as_ref().is_some_and(|fl| app.tick < fl.until);
+        let Some(rect) = app.map_rect.get().filter(|_| !overlay) else {
+            if self.placed {
+                let _ = crate::term::delete_image(&mut out, crate::term::MAP_IMAGE);
+                self.placed = false;
+                self.last = None;
+            }
+            return;
+        };
+        let fresh = self.last != Some((rect, app.theme));
+        if !fresh && app.tick % 3 != 0 {
+            return;
+        }
+        let w = (u32::from(rect.width) * self.cell.0).min(1600) as usize;
+        let h = (u32::from(rect.height) * self.cell.1).min(1000) as usize;
+        if w < 16 || h < 16 {
+            return;
+        }
+        let rgb = |c: Color| match c {
+            Color::Rgb(r, g, b) => [r, g, b],
+            _ => [128, 128, 128],
+        };
+        let p = pal(app.theme);
+        let colors = MapColors { bg: rgb(p.bg), acc: rgb(p.fg), warn: rgb(p.warn), hot: rgb(p.alert) };
+        let pins: Vec<Pin> = s
+            .peers
+            .list
+            .iter()
+            .filter_map(|q| q.place.clone().map(|place| Pin { place, out: q.dir == "out" }))
+            .collect();
+        let t = app.tick as f64 * FRAME.as_secs_f64();
+        let img = match app.theme {
+            Theme::Ghost => globe(w, h, &colors, &pins, s.peers.here.as_ref(), -40.0 + t * 2.4, t),
+            Theme::Angel => flat(w, h, &colors, &pins, s.peers.here.as_ref(), t),
+        };
+        if crate::term::place_png(&mut out, crate::term::MAP_IMAGE, &img.png(), (rect.x, rect.y), (rect.width, rect.height)).is_ok() {
+            self.placed = true;
+            self.last = Some((rect, app.theme));
+        }
+    }
+}
+
+fn event_loop(terminal: &mut ratatui::DefaultTerminal, state: &Arc<Mutex<State>>, theme: Theme, opts: &Options) -> Result<(), String> {
+    use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
     let mut app = App::new(theme);
+    app.gfx = opts.graphics;
+    let mut pixmap = PixelMap { cell: crate::term::cell_px(), placed: false, last: None };
+    let mut titled = 0u64;
+    let mut alerted = now_ms();
     loop {
         let snap = state.lock().map(|s| s.clone()).map_err(|_| "state lock poisoned".to_string())?;
         app.observe(&snap);
+        let mut out = std::io::stdout();
+        let _ = crossterm::execute!(out, BeginSynchronizedUpdate);
         terminal.draw(|f| draw(f, &app, &snap)).map_err(|e| e.to_string())?;
+        if app.gfx {
+            pixmap.update(&app, &snap);
+        }
+        let _ = crossterm::execute!(out, EndSynchronizedUpdate);
+        // Window title follows the zone head.
+        let zone = snap.chains.zone.as_ref().map_or(0, |z| z.number);
+        if zone != titled {
+            titled = zone;
+            let _ = crate::term::title(&mut out, &format!("◆ {} · {} · quai-dash", thousands(zone), snap.node.location));
+        }
+        // Desktop notifications for alerts.
+        if opts.notify {
+            for e in snap.events.iter().filter(|e| e.t_ms > alerted) {
+                if matches!(e.kind.as_str(), "stall" | "offline" | "mismatch" | "reorg") {
+                    let _ = crate::term::notify(&mut out, opts.kind, &format!("quai-dash · {}", snap.node.label), &e.text);
+                }
+            }
+            if let Some(e) = snap.events.back() {
+                alerted = alerted.max(e.t_ms);
+            }
+        }
         if event::poll(FRAME).map_err(|e| e.to_string())? {
             if let Event::Key(k) = event::read().map_err(|e| e.to_string())? {
                 if k.kind == KeyEventKind::Press && app.key(k.code) {
@@ -531,6 +631,7 @@ fn kv<'a>(p: &Pal, k: &str, v: String, vc: Color) -> Line<'a> {
 // ---------------------------------------------------------------- draw
 
 fn draw(f: &mut Frame, app: &App, s: &State) {
+    app.map_rect.set(None);
     let p = pal(app.theme);
     let area = f.area();
     f.render_widget(Block::default().style(Style::new().bg(p.bg).fg(p.text)), area);
@@ -921,6 +1022,21 @@ fn spark_right(f: &mut Frame, hist: &VecDeque<u64>, color: Color, area: Rect) {
 fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
     if area.width < 10 || area.height < 4 {
+        return;
+    }
+    if app.gfx {
+        // Leave the area blank; the loop places the image over it.
+        f.render_widget(Clear, area);
+        f.render_widget(Block::default().style(Style::new().bg(p.bg)), area);
+        app.map_rect.set(Some(Rect { height: area.height - 1, ..area }));
+        let mapped = s.peers.list.iter().filter(|x| x.place.is_some()).count();
+        let caption = if mapped == 0 {
+            s.peers.note.clone().unwrap_or_else(|| format!("{} peers; enable --geoip-db or --geoip-online to place them", s.peers.list.len()))
+        } else {
+            format!("{mapped} peers located · {} tcp · pixels", s.peers.list.len())
+        };
+        let cap_area = Rect { y: area.y + area.height - 1, height: 1, ..area };
+        f.render_widget(Paragraph::new(Line::styled(caption, Style::new().fg(p.dim))).alignment(Alignment::Right), cap_area);
         return;
     }
     let mut land = Vec::new();

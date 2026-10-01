@@ -52,6 +52,8 @@ quai-dash tui --logs ~/node/nodelogs --theme angel
 | `--stall-secs N` | 60 | seconds without a zone block before a stall event |
 | `web --listen ADDR` | `127.0.0.1:8090` | where the web dashboard listens |
 | `tui --theme ghost\|angel` | `ghost` | starting look |
+| `tui --graphics auto\|on\|off` | `auto` | pixel peer map (kitty graphics protocol) |
+| `tui --notify` | off | desktop notifications for alerts |
 
 ## The peer map
 
@@ -71,6 +73,23 @@ changes to the node.
     (free tier: HTTP, 15 requests a minute, 100 addresses each). It is
     off unless you ask for it.
   - Without either, the globe shows the peer count as an orbit.
+
+## Modern terminals
+
+In **kitty**, **Ghostty** and **WezTerm** (detected from `TERM`,
+`TERM_PROGRAM`, `KITTY_WINDOW_ID` or `GHOSTTY_RESOURCES_DIR`), the TUI's
+peer map is drawn in pixels with the kitty graphics protocol: the GHOST
+look gets the rotating dot globe with arcs and travelling packets, ANGEL
+gets the reticle map with its sweep. It redraws about four times a
+second and steps aside while help, flashes or the boot screen are up.
+`--graphics on|off` overrides the detection; elsewhere the map is
+braille.
+
+Every terminal gets:
+- synchronized output (no tearing in terminals that support it);
+- the zone height in the window title;
+- with `--notify`, desktop notifications for stalls, reorgs, block
+  mismatches and RPC loss (OSC 99 in kitty, OSC 9 elsewhere).
 
 ## Watching a remote node
 

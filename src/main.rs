@@ -5,14 +5,18 @@
 //! and prime JSON-RPC endpoints, the `nodelogs` directory, and (on the
 //! node's host, Linux) the node process's TCP connections for the peer
 //! map.
-#![allow(clippy::float_arithmetic)]
+// Float math and std ln/sin are fine for drawing; the workspace bans them
+// for consensus code.
+#![allow(clippy::float_arithmetic, clippy::disallowed_methods)]
 
 mod collect;
 mod demo;
 mod logs;
 mod peers;
+mod raster;
 mod rpc;
 mod state;
+mod term;
 mod tui;
 mod web;
 mod world;
@@ -34,6 +38,17 @@ pub enum Theme {
     Ghost,
     /// Orange command-center alarms.
     Angel,
+}
+
+/// Image support.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Graphics {
+    /// On in kitty, Ghostty and WezTerm.
+    Auto,
+    /// Always.
+    On,
+    /// Never (braille map).
+    Off,
 }
 
 #[derive(Parser)]
@@ -89,6 +104,13 @@ enum Cmd {
         /// Starting theme (t toggles).
         #[arg(long, value_enum, default_value_t = Theme::Ghost)]
         theme: Theme,
+        /// Pixel peer map with the kitty graphics protocol (kitty, Ghostty,
+        /// WezTerm): auto-detected, or forced on or off.
+        #[arg(long, value_enum, default_value_t = Graphics::Auto)]
+        graphics: Graphics,
+        /// Desktop notifications for stalls, reorgs, mismatches and RPC loss.
+        #[arg(long)]
+        notify: bool,
     },
     /// Record a scripted tour of the terminal dashboard as JSON frames
     /// (for the web player).
@@ -167,7 +189,15 @@ fn run() -> Result<(), String> {
             eprintln!("quai-dash: watching {} — open http://{listen}/", cli.rpc);
             web::serve(&listen, state)
         }
-        Cmd::Tui { theme } => tui::run(state, theme),
+        Cmd::Tui { theme, graphics, notify } => {
+            let kind = term::detect();
+            let graphics = match graphics {
+                Graphics::Auto => kind.graphics(),
+                Graphics::On => true,
+                Graphics::Off => false,
+            };
+            tui::run(state, theme, tui::Options { graphics, kind, notify })
+        }
         Cmd::Record { out, size, fps, seconds } => {
             let (w, h) = size.split_once('x').ok_or("--size expects COLSxROWS")?;
             let dims = (w.parse().map_err(|_| "bad width")?, h.parse().map_err(|_| "bad height")?);
