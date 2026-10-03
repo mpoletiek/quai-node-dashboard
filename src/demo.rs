@@ -503,6 +503,19 @@ pub fn run(state: Arc<Mutex<State>>) {
         st.node.chain_id = Some(9);
         st.node.online = true;
         st.node.log_file = Some("demo".into());
+        // A few workshares from before the dashboard opened, so the first
+        // screen already shows some included on chain (newest first).
+        for i in (0..7u64).rev() {
+            let w = WORKERS[(i as usize * 3) % WORKERS.len()];
+            d.found.push(FoundShare {
+                height: d.zone - 30 + i * 4,
+                hash: d.rng.hash(),
+                worker: format!("{}.{}", w.0, w.1),
+                algorithm: w.2.into(),
+                found_ms: now - (200 - i * 25) * 1000,
+                status: "pending".into(),
+            });
+        }
         for i in 0..40u64 {
             d.mine(&mut st, now - (40 - i) * 5000, true);
         }

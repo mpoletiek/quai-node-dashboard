@@ -670,7 +670,13 @@ class Demo {
       ["0x0013e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a291", "l9-02", "scrypt", 1.65e10, 1024],
       ["0x00c4a9e3f1b7d5c3a1e9f7d5b3a1c9e7f5d3b1a9", "gpu0", "kawpow", 3.04e7, 0.2],
     ].map((w, i) => ({ address: w[0], name: w[1], algorithm: w[2], base: w[3], difficulty: w[4], valid: 300 + (i * 97) % 400, stale: (i * 3) % 7, invalid: i % 2, last: Date.now() - i * 4100 }));
-    this.found = [];
+    // A few workshares from before the page opened, so the first screen
+    // already shows some included on chain.
+    this.found = Array.from({ length: 7 }, (_, i) => {
+      const w = this.sworkers[(i * 3) % this.sworkers.length];
+      return { height: this.zone - 30 + i * 4, hash: this.hash(), worker: w.address + "." + w.name, algorithm: w.algorithm,
+        found_ms: Date.now() - (200 - i * 25) * 1000, status: "pending" };
+    }).reverse();
     for (let i = 0; i < 40; i++) this.mine(Date.now() - (40 - i) * 5000, true);
     for (let i = 0; i < 30; i++) this.log("INFO", "rsq_node::node: network peers=" + (80 + (i % 5)));
   }
