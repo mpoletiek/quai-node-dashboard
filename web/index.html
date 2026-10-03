@@ -30,6 +30,9 @@
   --tier-prime: #ff3d7f;
   --tier-region: #ffc35a;
   --tier-zone: #5ef6e0;
+  --a-kawpow: #5ef6e0;
+  --a-sha: #a596ff;
+  --a-scrypt: #ffc35a;
   --display: "Chakra Petch", "Rajdhani", "Segoe UI", sans-serif;
   --label: "Chakra Petch", "Segoe UI", sans-serif;
   --label-track: .18em;
@@ -54,6 +57,9 @@ body[data-look="angel"] {
   --tier-prime: #ff2a2a;
   --tier-region: #ffb21a;
   --tier-zone: #ff7a1a;
+  --a-kawpow: #ff7a1a;
+  --a-sha: #a77bff;
+  --a-scrypt: #ffd23a;
   --display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
   --label: "Barlow Condensed", "Arial Narrow", sans-serif;
   --label-track: .12em;
@@ -104,12 +110,12 @@ a.chip:hover { border-color: var(--acc); }
 
 /* ---------- Grid ---------- */
 .grid { display: grid; gap: var(--gap); grid-template-columns: minmax(250px, 3fr) minmax(0, 6fr) minmax(270px, 3fr); grid-template-areas:
-  "heads hero algos" "econ map algos" "econ map sync" "tape tape tape" "logs logs events"; }
+  "heads hero algos" "econ map algos" "econ map sync" "tape tape tape" "mining mining mining" "logs logs events"; }
 @media (max-width: 1180px) {
-  .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "hero hero" "heads algos" "map map" "econ sync" "tape tape" "logs logs" "events events"; }
+  .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "hero hero" "heads algos" "map map" "econ sync" "tape tape" "mining mining" "logs logs" "events events"; }
 }
 @media (max-width: 720px) {
-  .grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "heads" "algos" "map" "sync" "econ" "tape" "events" "logs"; }
+  .grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "heads" "algos" "map" "sync" "econ" "tape" "mining" "events" "logs"; }
 }
 
 .panel { position: relative; background: var(--panel); border: 1px solid var(--line); padding: 14px 16px 16px; min-width: 0; border-radius: var(--radius);
@@ -242,7 +248,53 @@ body[data-look="angel"] .syncbig { font-family: var(--label); font-weight: 700; 
 .ev.prime { border-left-color: var(--tier-prime); }
 .ev.region { border-left-color: var(--tier-region); }
 .ev.reorg, .ev.stall, .ev.offline, .ev.mismatch { border-left-color: var(--bad); color: var(--bad); }
-.ev.resume, .ev.online { border-left-color: var(--ok); }
+.ev.resume, .ev.online, .ev.workshare { border-left-color: var(--ok); }
+.ev.mined { border-left-color: var(--warn); color: var(--warn); }
+
+/* ---------- Stratum ---------- */
+#minep { grid-area: mining; }
+.mine { display: grid; gap: 18px var(--gap); grid-template-columns: minmax(250px, 3fr) minmax(0, 6fr) minmax(240px, 3fr); align-items: start; }
+@media (max-width: 1180px) { .mine { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .mine .wk { grid-column: 1 / -1; order: 3; } }
+@media (max-width: 720px) { .mine { grid-template-columns: minmax(0, 1fr); } }
+.mine h3 { margin: 0 0 8px; font: 600 11px var(--label); letter-spacing: var(--label-track); text-transform: uppercase; color: var(--dim); }
+body[data-look="angel"] .mine h3 { font-size: 13px; }
+.mstats { display: flex; gap: 22px; flex-wrap: wrap; margin-bottom: 8px; }
+.mstats .v { font-size: 24px; color: var(--fg); }
+body[data-look="angel"] .mstats .v { font: 700 28px var(--label); color: var(--acc); }
+.marow { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 3px 10px; align-items: baseline; padding: 7px 0 6px; border-top: 1px solid var(--line); font-size: 12px; }
+.marow .an { font: 600 12px var(--label); letter-spacing: var(--label-track); }
+.marow .hr { font-size: 15px; color: var(--fg); }
+.marow .ex { color: var(--fg2); text-align: right; }
+.marow .bar { grid-column: 1 / -1; height: 3px; background: var(--line); position: relative; overflow: hidden; }
+.marow .bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: currentColor; transition: width .8s ease; }
+.marow.idle { opacity: .45; }
+.c-kawpow, .wt td.c-kawpow { color: var(--a-kawpow); } .c-sha256, .wt td.c-sha256 { color: var(--a-sha); } .c-scrypt, .wt td.c-scrypt { color: var(--a-scrypt); }
+.wtable-wrap { max-height: 300px; overflow: auto; scrollbar-color: var(--dim) transparent; }
+table.wt { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.wt th { text-align: left; font: 600 10.5px var(--label); letter-spacing: var(--label-track); color: var(--dim); text-transform: uppercase; padding: 0 10px 6px 0; position: sticky; top: 0; background: var(--bg2); white-space: nowrap; }
+.wt td { padding: 5px 10px 5px 0; border-top: 1px solid var(--line); white-space: nowrap; color: var(--fg2); }
+.wt td.nm { color: var(--fg); }
+.wt .num { text-align: right; }
+.wt td.bad { color: var(--bad); } .wt td.warn { color: var(--warn); } .wt td.okc { color: var(--ok); }
+.wt td.addr { color: var(--dim); }
+.flist { display: grid; gap: 5px; max-height: 190px; overflow-y: auto; }
+.fs { display: grid; grid-template-columns: 62px 76px minmax(0, 1fr); gap: 8px; font-size: 12px; padding: 4px 0 4px 8px; border-left: 3px solid var(--line); color: var(--fg2); }
+.fs time { color: var(--dim); }
+.fs .pill { font: 600 10.5px var(--label); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.fs.block { border-left-color: var(--warn); } .fs.block .pill { color: var(--warn); }
+.fs.included { border-left-color: var(--ok); } .fs.included .pill { color: var(--ok); }
+.fs .who { min-width: 0; overflow-wrap: anywhere; }
+.fs .who small { display: block; color: var(--dim); font-size: 11px; }
+.mlist { display: grid; gap: 4px; font-size: 12px; }
+.mlist div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding: 3px 0; border-top: 1px solid var(--line); }
+.mlist .a { color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mlist b { font-weight: 400; color: var(--ok); } .mlist em { font-style: normal; color: var(--warn); }
+.mnote { color: var(--fg2); font-size: 13px; line-height: 1.6; max-width: 72ch; }
+.mnote code { color: var(--acc); }
+.mfoot { margin-top: 8px; font-size: 11px; color: var(--dim); }
+#minep.flash { animation: minefl 1.6s ease-out; }
+@keyframes minefl { from { box-shadow: inset 0 0 0 2px var(--ok), 0 0 24px var(--ok); } to { box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { #minep.flash { animation: none; } }
 .empty { color: var(--dim); font-size: 12px; }
 
 /* ---------- Cinematics ---------- */
@@ -257,6 +309,8 @@ body[data-look="angel"] .syncbig { font-family: var(--label); font-weight: 700; 
 .angel-banner { background: repeating-linear-gradient(-45deg, var(--hot) 0 18px, #000 18px 36px); padding: 6px 0; animation: fadeout 2.6s ease-in forwards; }
 .angel-banner div { background: #000; color: var(--hot); font: 700 clamp(26px, 4.4vw, 54px)/1.1 var(--label); letter-spacing: .3em; padding: 12px 0; }
 .angel-banner div.amber { color: var(--warn); }
+.angel-banner div.okc { color: var(--ok); }
+.ghost-hit.okc { color: var(--ok); text-shadow: -3px 0 var(--hot), 3px 0 #3ad1ff, 0 0 30px var(--ok); }
 .titlecard { position: fixed; inset: 0; background: #000; display: grid; place-content: center; text-align: left; padding: var(--gut); animation: fadeout 3.2s ease-in forwards; }
 .titlecard .ep { font: 800 clamp(20px, 3vw, 40px)/1 var(--display); color: #fff; transform: scaleX(.8); transform-origin: left; }
 .titlecard .big { font: 800 clamp(64px, 13vw, 190px)/.92 var(--display); color: #fff; transform: scaleX(.78); transform-origin: left; letter-spacing: -.01em; }
@@ -356,6 +410,38 @@ body[data-look="angel"] .syncbig { font-family: var(--label); font-weight: 700; 
         <div class="legend aside"><span>every block lands in its zone · a region block also extends the region chain · a prime block extends all three</span><span>node size = gas used · ticks = workshares</span></div></div>
       <canvas id="tape" aria-label="Recent blocks by chain tier"></canvas>
       <div class="readout num" id="readout">Point at a block for details.</div>
+    </section>
+
+    <section class="panel" id="minep" aria-label="Stratum: miners on this node">
+      <div class="ph"><h2>Stratum</h2><span class="jp">採掘 · 鉱夫</span><span class="aside" id="mineaside"></span></div>
+      <div class="mnote" id="mineoff" hidden></div>
+      <div class="mine" id="mine">
+        <div class="ov">
+          <div class="mstats">
+            <div><div class="lbl">Workers</div><div class="v num" id="m-workers">—</div></div>
+            <div><div class="lbl">Miners</div><div class="v num" id="m-miners">—</div></div>
+            <div><div class="lbl">Uptime</div><div class="v num" id="m-up">—</div></div>
+          </div>
+          <div id="m-algos"></div>
+          <div class="kv" style="margin-top:10px">
+            <span class="lbl">Shares ok · stale · bad</span><span class="v num" id="m-shares">—</span>
+            <span class="lbl">Workshares to node</span><span class="v num" id="m-found">—</span>
+            <span class="lbl">Paid on-chain</span><span class="v num" id="m-chain">—</span>
+            <span class="lbl">Share luck</span><span class="v num" id="m-luck">—</span>
+          </div>
+        </div>
+        <div class="wk">
+          <h3>Workers</h3>
+          <div class="wtable-wrap"><table class="wt"><thead><tr><th>Address</th><th>Worker</th><th>Algo</th><th class="num">Hashrate</th><th class="num">Diff</th><th class="num">Ok</th><th class="num">Stale</th><th class="num">Bad</th><th class="num">Last</th></tr></thead><tbody id="m-wbody"></tbody></table></div>
+        </div>
+        <div class="fd">
+          <h3>Handed to the node</h3>
+          <div class="flist" id="m-flist"></div>
+          <h3 style="margin-top:14px">Miners · paid on-chain</h3>
+          <div class="mlist" id="m-mlist"></div>
+          <div class="mfoot" id="m-foot"></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="logp" aria-label="Node log">
@@ -503,9 +589,9 @@ function banner(kind, title, sub) {
   const el = document.createElement("div");
   el.className = "banner";
   if (look === "ghost") {
-    el.innerHTML = `<div class="ghost-hit">${title}<small>${sub}</small></div>`;
+    el.innerHTML = `<div class="ghost-hit${kind === "mined" ? " okc" : ""}">${title}<small>${sub}</small></div>`;
   } else {
-    el.innerHTML = `<div class="angel-banner"><div class="${kind === "region" ? "amber" : ""}">${title}</div></div>`;
+    el.innerHTML = `<div class="angel-banner"><div class="${kind === "region" ? "amber" : kind === "mined" ? "okc" : ""}">${title}</div></div>`;
   }
   host.replaceChildren(el);
   setTimeout(() => el.remove(), 2800);
@@ -539,9 +625,19 @@ function onEvent(ev) {
     flashTier("prime");
   } else if (ev.kind === "region") {
     flashTier("region");
+  } else if (ev.kind === "mined") {
+    if (look === "angel") titleCard(["採掘 · STRATUM", "MINED", ev.text]);
+    else banner("mined", "BLOCK ACQUIRED", "採掘成功 · " + ev.text);
+    flashMine();
+  } else if (ev.kind === "workshare") {
+    flashMine();
   } else if (["reorg", "stall", "mismatch", "offline"].includes(ev.kind)) {
     banner("alert", look === "angel" ? "警告 " + ev.kind.toUpperCase() : ev.kind.toUpperCase() + " DETECTED", ev.text);
   }
+}
+function flashMine() {
+  const el = $("minep");
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
 }
 function flashTier(t) {
   const el = $("tier-" + t);
@@ -564,6 +660,17 @@ class Demo {
       return { ip: "203.0." + ((i * 37) % 250) + "." + ((i * 91) % 250), port: 4002, dir: i % 7 ? "in" : "out",
         place: { lat: c[0] + (Math.random() - 0.5) * 3, lon: c[1] + (Math.random() - 0.5) * 3, city: c[2], country: c[3] }, since_ms: Date.now() - Math.random() * 3.6e6 };
     });
+    this.sworkers = [
+      ["0x0042f6d1c9a3b2e7f05a44c1d8e2b9a7c6f30a11", "farm-a", "kawpow", 1.21e9, 2],
+      ["0x0042f6d1c9a3b2e7f05a44c1d8e2b9a7c6f30a11", "farm-b", "kawpow", 0.88e9, 2],
+      ["0x00771a5e0b3c9d24e6f8a1b2c3d4e5f60718293a", "s21-01", "sha256", 2.31e14, 65536],
+      ["0x00771a5e0b3c9d24e6f8a1b2c3d4e5f60718293a", "s21-02", "sha256", 2.27e14, 65536],
+      ["0x0029c4b7a1d0e9f8c7b6a5948372615049382716", "s19-xp", "sha256", 1.38e14, 32768],
+      ["0x0013e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a291", "l9-01", "scrypt", 1.72e10, 1024],
+      ["0x0013e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a291", "l9-02", "scrypt", 1.65e10, 1024],
+      ["0x00c4a9e3f1b7d5c3a1e9f7d5b3a1c9e7f5d3b1a9", "gpu0", "kawpow", 3.04e7, 0.2],
+    ].map((w, i) => ({ address: w[0], name: w[1], algorithm: w[2], base: w[3], difficulty: w[4], valid: 300 + (i * 97) % 400, stale: (i * 3) % 7, invalid: i % 2, last: Date.now() - i * 4100 }));
+    this.found = [];
     for (let i = 0; i < 40; i++) this.mine(Date.now() - (40 - i) * 5000, true);
     for (let i = 0; i < 30; i++) this.log("INFO", "rsq_node::node: network peers=" + (80 + (i % 5)));
   }
@@ -579,11 +686,22 @@ class Demo {
     if (order <= 1) this.region++;
     if (order === 0) this.prime++;
     const prev = this.blocks[this.blocks.length - 1];
+    // Our pending workshares land in the next blocks; now and then the block is ours.
+    let ours = 0;
+    for (const f of this.found) if (f.status === "pending" && ours < 2 && Math.random() < 0.7) { f.status = "included"; ours++; }
+    let mined = null;
+    if (!quiet && Math.random() < 0.06) mined = this.sworkers[(Math.random() * this.sworkers.length) | 0];
     const b = { number: this.zone, hash: this.hash(), parent: prev ? prev.hash : this.hash(), timestamp: Math.floor(t / 1000), seen_ms: t,
       txs: Math.floor(Math.random() ** 3 * 40), etxs: Math.floor(Math.random() * 18), workshares: Math.floor(Math.random() * 14),
       gas_used: Math.floor(Math.random() ** 2 * 18e6), gas_limit: 50e6, base_fee: String(Math.floor(2.6e13 + Math.random() * 2e12)),
       order, difficulty: String(1.038e12 + Math.floor(Math.random() * 4e9)), coinbase: "0x00" + this.hash().slice(4, 42), auxpow: true,
-      prime_number: this.prime, region_number: this.region, exchange_rate: "13264669140000000000", size: 3000 + Math.floor(Math.random() * 9000) };
+      prime_number: this.prime, region_number: this.region, exchange_rate: "13264669140000000000", size: 3000 + Math.floor(Math.random() * 9000), ours, ours_block: !!mined };
+    b.workshares += ours;
+    if (mined) {
+      b.coinbase = mined.address;
+      this.found.unshift({ height: b.number, hash: b.hash, worker: mined.address + "." + mined.name, algorithm: mined.algorithm, found_ms: t, status: "block" });
+      this.events.push({ t_ms: t, kind: "mined", text: `Block ${b.number} mined through this node by ${shortWorker(mined.address + "." + mined.name)} (${mined.algorithm})`, number: b.number });
+    }
     this.blocks.push(b);
     if (this.blocks.length > 96) this.blocks.shift();
     if (!quiet) {
@@ -600,6 +718,11 @@ class Demo {
     if (Math.random() < 0.5) this.log("INFO", `rsq_miner::worker: Workshare accepted hash=${this.hash().slice(0, 18)}… number=${this.zone + 1}`);
     const wob = (x, p) => x * (1 + (Math.random() - 0.5) * p);
     const last = this.blocks[this.blocks.length - 1];
+    const mining = { avg_block_time: wob(5.1, 0.05), blocks_analyzed: 178,
+        kawpow: { hashrate: wob(2.43e11, 0.06), difficulty: "1038275705430", share_time: wob(5.1, 0.05) },
+        sha: { hashrate: wob(2.5e17, 0.08), difficulty: "220452383356020829", share_time: wob(1.25, 0.1) },
+        scrypt: { hashrate: wob(7.08e12, 0.08), difficulty: "14544668614928", share_time: wob(1.3, 0.1) },
+        base_block_reward: "70.4023", estimated_block_reward: "105.3384", workshare_reward: "11.7042", quai_supply: "1124728606", avg_tx_fees: "17.4680" };
     return {
       now_ms: now,
       node: { label: "DEMO NODE", rpc: "demo", location: "Cyprus-1", chain_id: 9, online: true, error: null, log_file: "nodelogs/global.log" },
@@ -607,11 +730,8 @@ class Demo {
         region: { number: this.region, hash: "", timestamp: last.timestamp - (last.order <= 1 ? 0 : 4) },
         zone: { number: last.number, hash: last.hash, timestamp: last.timestamp } },
       blocks: this.blocks,
-      mining: { avg_block_time: wob(5.1, 0.05), blocks_analyzed: 178,
-        kawpow: { hashrate: wob(2.43e11, 0.06), difficulty: "1038275705430", share_time: wob(5.1, 0.05) },
-        sha: { hashrate: wob(2.5e17, 0.08), difficulty: "220452383356020829", share_time: wob(1.25, 0.1) },
-        scrypt: { hashrate: wob(7.08e12, 0.08), difficulty: "14544668614928", share_time: wob(1.3, 0.1) },
-        base_block_reward: "70.4023", estimated_block_reward: "105.3384", workshare_reward: "11.7042", quai_supply: "1124728606", avg_tx_fees: "17.4680" },
+      mining,
+      stratum: this.stratum(now, mining),
       pending_shares: { kawpow: (Math.random() * 3) | 0, sha: (Math.random() * 10) | 0, scrypt: (Math.random() * 8) | 0, progpow: 0 },
       peers: { count: 86, inbound: 76, outbound: 10, list: this.peers, geo: "db", note: null, here: { lat: 39.1, lon: -94.6, city: "", country: "" } },
       compare: { label: "GO-QUAI", rpc: "demo", height: last.number, online: true, compared: 64, matched: 64, last_mismatch: null },
@@ -619,6 +739,45 @@ class Demo {
     };
   }
 }
+
+Demo.prototype.stratum = function (now, mining) {
+  for (const w of this.sworkers) {
+    if (Math.random() < 1 / 30) { const r = Math.random(); if (r < 0.985) w.valid++; else if (r < 0.995) w.stale++; else w.invalid++; w.last = now; }
+  }
+  if (Math.random() < 1 / 30) {
+    const w = this.sworkers[(Math.random() * this.sworkers.length) | 0];
+    const f = { height: this.zone + 1, hash: this.hash(), worker: w.address + "." + w.name, algorithm: w.algorithm, found_ms: now, status: "pending" };
+    this.found.unshift(f);
+    this.events.push({ t_ms: now, kind: "workshare", text: `Workshare from ${shortWorker(f.worker)} (${f.algorithm}) at zone ${f.height}`, number: f.height });
+    if (this.events.length > 64) this.events.shift();
+  }
+  if (this.found.length > 32) this.found.length = 32;
+  const workers = this.sworkers.map((w) => ({ address: w.address, name: w.name, algorithm: w.algorithm, difficulty: w.difficulty,
+    hashrate: w.base * (1 + (Math.random() - 0.5) * 0.08), valid: w.valid, stale: w.stale, invalid: w.invalid, last_share_ms: w.last, connected_ms: this.t0 - 3.6e6 }))
+    .sort((a, b) => b.hashrate - a.hashrate);
+  const algo = (k, net) => {
+    const ws = workers.filter((w) => w.algorithm === k), hashrate = ws.reduce((t, w) => t + w.hashrate, 0);
+    const share = net.hashrate ? hashrate / net.hashrate : 0;
+    return { hashrate, workers: ws.length, shares_valid: ws.reduce((t, w) => t + w.valid, 0), network_share: share, expected_per_hour: share * 3600 / net.share_time };
+  };
+  const by = new Map();
+  for (const w of workers) {
+    const e = by.get(w.address) || { address: w.address, workers: 0, algorithms: [], workshares: 0, blocks: 0 };
+    e.workers++; if (!e.algorithms.includes(w.algorithm)) e.algorithms.push(w.algorithm); by.set(w.address, e);
+  }
+  let ws = 0, blk = 0;
+  for (const b of this.blocks) { ws += b.ours || 0; if (b.ours_block) { blk++; const e = by.get(b.coinbase); if (e) e.blocks++; } }
+  // Spread the included workshares over the miners that found them.
+  for (const f of this.found) if (f.status === "included") { const e = by.get(f.worker.split(".")[0]); if (e) e.workshares++; }
+  const sum = (k) => workers.reduce((t, w) => t + w[k], 0);
+  return { api: "demo", online: true, error: null, uptime: (now - this.t0) / 1000 + 3 * 3600, workers_connected: workers.length, workers_total: workers.length + 2,
+    miners: by.size, shares_valid: sum("valid"), shares_stale: sum("stale"), shares_invalid: sum("invalid"), workshares_found: 214 + this.found.length,
+    kawpow: algo("kawpow", mining.kawpow), sha: algo("sha256", mining.sha), scrypt: algo("scrypt", mining.scrypt), workers,
+    luck: { shares: Math.min(500, sum("valid")), workshare_diff: 4523.7, average: 0.41, best: 131.6, expected_shares: 11034 },
+    found: this.found.map((f) => ({ ...f })),
+    onchain: { window: this.blocks.length, workshares: ws, blocks: blk, found_included: this.found.filter((f) => f.status === "included").length,
+      found_blocks: this.found.filter((f) => f.status === "block").length, by_address: [...by.values()] } };
+};
 
 // ---------------------------------------------------------------- state & polling
 let lastState = null, demo = null, fails = 0, lastSeq = 0, lastEventT = 0, firstLoad = true, lastBlockNum = 0;
@@ -746,6 +905,74 @@ function render(s, full) {
   if (!paused) appendLogs(s.logs);
   // Events.
   renderEvents(s.events);
+  renderStratum(s);
+}
+const ALGO_NAME = { kawpow: "KAWPOW", sha256: "SHA", scrypt: "SCRYPT" };
+function shortAddr(a) { return a && a.length > 14 ? a.slice(0, 8) + "…" + a.slice(-4) : a || ""; }
+function shortWorker(w) { const i = w.indexOf("."); return i < 0 ? shortAddr(w) : shortAddr(w.slice(0, i)) + w.slice(i); }
+function ago(ms, now) {
+  if (!ms) return "—";
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  return s < 120 ? s + "s" : s < 7200 ? Math.round(s / 60) + "m" : Math.round(s / 3600) + "h";
+}
+function compactNum(v) {
+  if (!v) return "—";
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + "M";
+  if (v >= 1e4) return (v / 1e3).toFixed(1) + "k";
+  if (v >= 100 || Number.isInteger(v)) return String(Math.round(v));
+  return String(+v.toFixed(3));
+}
+function uptimeStr(sec) {
+  sec = Math.max(0, sec | 0);
+  return sec >= 86400 ? Math.floor(sec / 86400) + "d " + Math.floor((sec % 86400) / 3600) + "h" : Math.floor(sec / 3600) + "h " + String(Math.floor(sec / 60) % 60).padStart(2, "0") + "m";
+}
+function renderStratum(s) {
+  const st = s.stratum, off = $("mineoff"), body = $("mine");
+  if (!st || (!st.online && !st.workers.length)) {
+    off.hidden = false; body.hidden = true;
+    off.innerHTML = !st
+      ? "No stratum API. On the node's host, run quai-dash with <code>--stratum-api http://127.0.0.1:3336</code> to see every miner and worker mining to this node (rs-quai and go-quai serve it with <code>--node.stratum-enabled</code>)."
+      : "Stratum API unreachable at <code>" + esc(st.api) + "</code>: " + esc(st.error || "no answer") + ".";
+    $("mineaside").textContent = "";
+    return;
+  }
+  off.hidden = true; body.hidden = false;
+  $("mineaside").textContent = (st.online ? "" : "stale · ") + (st.api === "demo" ? "simulated" : st.api);
+  setNum($("m-workers"), String(st.workers_connected));
+  setNum($("m-miners"), String(st.miners));
+  $("m-up").textContent = uptimeStr(st.uptime);
+  const rows = [["kawpow", st.kawpow], ["sha256", st.sha], ["scrypt", st.scrypt]];
+  $("m-algos").innerHTML = rows.map(([k, a]) => {
+    const idle = !a.workers;
+    // Bar: share of the network on a log scale from 0.001 % to 100 %.
+    const pct = a.network_share > 0 ? Math.max(2, Math.min(100, (Math.log10(a.network_share * 100) + 3) / 5 * 100)) : 0;
+    return `<div class="marow c-${k}${idle ? " idle" : ""}"><span class="an">${ALGO_NAME[k]}</span>` +
+      `<span class="hr num">${si(a.hashrate)}</span>` +
+      `<span class="ex num">${(a.network_share * 100).toFixed(3)}% · ${a.expected_per_hour.toFixed(2)}/h · ${a.workers}w</span>` +
+      `<span class="bar"><i style="width:${pct}%"></i></span></div>`;
+  }).join("");
+  $("m-shares").innerHTML = `<span style="color:var(--ok)">${fmtInt(st.shares_valid)}</span> · ${fmtInt(st.shares_stale)} · <span style="color:${st.shares_invalid ? "var(--bad)" : "inherit"}">${fmtInt(st.shares_invalid)}</span>`;
+  $("m-found").textContent = fmtInt(st.workshares_found);
+  const oc = st.onchain;
+  $("m-chain").innerHTML = `${oc.workshares} ws · <span style="color:${oc.blocks ? "var(--warn)" : "inherit"}">${oc.blocks} blk</span><small>/${oc.window}</small>`;
+  $("m-luck").textContent = st.luck.shares ? `best ${st.luck.best.toFixed(1)}% · avg ${st.luck.average.toFixed(2)}%` : "no shares yet";
+  const now = s.now_ms;
+  $("m-wbody").innerHTML = st.workers.length ? st.workers.map((w) =>
+    `<tr><td class="addr" title="${esc(w.address)}">${esc(shortAddr(w.address))}</td><td class="nm">${esc(w.name || "—")}</td>` +
+    `<td class="c-${esc(w.algorithm)}">${ALGO_NAME[w.algorithm] || esc(w.algorithm)}</td><td class="num">${si(w.hashrate)}</td>` +
+    `<td class="num">${compactNum(w.difficulty)}</td><td class="num okc">${fmtInt(w.valid)}</td>` +
+    `<td class="num${w.stale ? " warn" : ""}">${fmtInt(w.stale)}</td><td class="num${w.invalid ? " bad" : ""}">${fmtInt(w.invalid)}</td>` +
+    `<td class="num">${ago(w.last_share_ms, now)}</td></tr>`).join("")
+    : '<tr><td colspan="9" class="addr">No workers connected.</td></tr>';
+  const pill = { block: "Block", included: "Included", pending: "Pending", unseen: "Older" };
+  $("m-flist").innerHTML = st.found.length ? st.found.slice(0, 24).map((f) =>
+    `<div class="fs ${f.status}"><time>${new Date(f.found_ms).toLocaleTimeString("en-GB", { hour12: false })}</time>` +
+    `<span class="pill">${pill[f.status] || f.status}</span><span class="who">${fmtInt(f.height)} · <span class="c-${esc(f.algorithm)}">${ALGO_NAME[f.algorithm] || esc(f.algorithm)}</span><small>${esc(shortWorker(f.worker))}</small></span></div>`).join("")
+    : '<div class="empty">Shares that meet the workshare target go to the node and appear here.</div>';
+  const miners = oc.by_address.slice().sort((a, b) => (b.workshares + b.blocks * 100) - (a.workshares + a.blocks * 100) || b.workers - a.workers);
+  $("m-mlist").innerHTML = miners.map((a) =>
+    `<div><span class="a" title="${esc(a.address)}">${esc(shortAddr(a.address))} · ${a.workers}w · ${a.algorithms.map((x) => ALGO_NAME[x] || x).join("+")}</span><b>${a.workshares} ws</b><em>${a.blocks} blk</em></div>`).join("");
+  $("m-foot").textContent = `Last ${oc.window} canonical blocks. Of the workshares handed to the node, ${oc.found_included} are included and ${oc.found_blocks} became blocks.`;
 }
 let logFilter = "all", paused = false;
 const HL = /(Appended new block|Workshare accepted|prime|region|reorg|Reorging|peers=\d+|number=\d+)/gi;
@@ -992,7 +1219,7 @@ $("tape").addEventListener("pointermove", (e) => {
   const t = tapeLayout[best], b = t && t.b;
   $("readout").textContent = b
     ? `zone #${fmtInt(b.number)}` + (b.order <= 1 ? ` · region #${fmtInt(b.region_number)}` : "") + (b.order === 0 ? ` · prime #${fmtInt(b.prime_number)}` : "") +
-      ` · ${b.txs} txs · ${b.etxs} etxs · ${b.workshares} workshares · gas ${(100 * b.gas_used / Math.max(1, b.gas_limit)).toFixed(1)}% · ${b.hash.slice(0, 18)}…`
+      ` · ${b.txs} txs · ${b.etxs} etxs · ${b.workshares} workshares` + (b.ours ? ` (${b.ours} from this node's miners)` : "") + (b.ours_block ? " · found through this node" : "") + ` · gas ${(100 * b.gas_used / Math.max(1, b.gas_limit)).toFixed(1)}% · ${b.hash.slice(0, 18)}…`
     : "Point at a block for details.";
 });
 $("tape").addEventListener("pointerleave", () => { tapeHover = -1; });
@@ -1062,6 +1289,15 @@ function drawTape(now) {
     if (angel) ctx.fillRect(x - r, laneY[2] - r, r * 2, r * 2); else { ctx.beginPath(); ctx.arc(x, laneY[2], r, 0, 7); ctx.fill(); }
     ctx.fillStyle = hexA(col[2], 0.6);
     for (let k = 0; k < Math.min(b.workshares, 14); k++) ctx.fillRect(x - 0.5, laneY[2] + r + 4 + k * 3, 1.5, 1.5);
+    // Paid to a miner on this node's stratum: a ring (a star above for the block itself).
+    if (b.ours || b.ours_block) {
+      const ok = css("--ok");
+      ctx.strokeStyle = ok; ctx.lineWidth = 1.5;
+      if (!angel) { ctx.shadowColor = ok; ctx.shadowBlur = 10; }
+      if (angel) ctx.strokeRect(x - r - 3, laneY[2] - r - 3, (r + 3) * 2, (r + 3) * 2); else { ctx.beginPath(); ctx.arc(x, laneY[2], r + 3.5, 0, 7); ctx.stroke(); }
+      ctx.shadowBlur = 0;
+      if (b.ours_block) { ctx.fillStyle = ok; ctx.font = `12px ${css("--mono")}`; ctx.fillText("★", x - 5, laneY[2] - r - 6); }
+    }
     // region / prime nodes
     for (let k = b.order; k < 2; k++) {
       const y = laneY[k], R = k === 0 ? 6.5 : 5;

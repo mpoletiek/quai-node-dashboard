@@ -73,11 +73,21 @@ enum View {
     Dash,
     Logs,
     Map,
+    Mining,
+}
+
+/// What a full-screen moment celebrates.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Moment {
+    Prime,
+    Region,
+    /// A block found through this node's stratum.
+    Mined,
 }
 
 struct Flash {
     until: u64,
-    prime: bool,
+    kind: Moment,
     text: String,
 }
 
@@ -137,10 +147,21 @@ impl App {
             self.last_zone = zone;
         }
         for e in s.events.iter().filter(|e| e.t_ms > self.last_event_ms) {
-            if e.kind == "prime" || e.kind == "region" {
+            let kind = match e.kind.as_str() {
+                "prime" => Some(Moment::Prime),
+                "region" => Some(Moment::Region),
+                "mined" => Some(Moment::Mined),
+                _ => None,
+            };
+            // A mined block outranks a region block arriving with it.
+            let busy = self
+                .flash
+                .as_ref()
+                .is_some_and(|f| f.kind == Moment::Mined && self.tick < f.until);
+            if let Some(kind) = kind.filter(|k| *k == Moment::Mined || !busy) {
                 self.flash = Some(Flash {
-                    until: self.tick + FLASH_TICKS,
-                    prime: e.kind == "prime",
+                    until: self.tick + FLASH_TICKS + if kind == Moment::Mined { 8 } else { 0 },
+                    kind,
                     text: e.text.clone(),
                 });
             }
@@ -194,6 +215,13 @@ impl App {
                     View::Dash
                 } else {
                     View::Map
+                }
+            }
+            KeyCode::Char('s') => {
+                self.view = if self.view == View::Mining {
+                    View::Dash
+                } else {
+                    View::Mining
                 }
             }
             KeyCode::Char('?') | KeyCode::Char('h') => self.help = !self.help,
@@ -787,6 +815,7 @@ fn draw(f: &mut Frame, app: &App, s: &State) {
             let inner = panel(f, body, app, "PEER MAP", "地図");
             draw_map(f, app, s, inner);
         }
+        View::Mining => draw_mining(f, app, s, body),
         View::Dash => draw_dash(f, app, s, body),
     }
     if let Some(fl) = app.flash.as_ref().filter(|fl| app.tick < fl.until) {
@@ -850,8 +879,22 @@ fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
         let inner = panel(f, tape, app, "BLOCK LATTICE", "階層");
         draw_tape(f, app, s, inner);
     }
-    let [events, logs] =
-        Layout::horizontal([Constraint::Percentage(38), Constraint::Percentage(62)]).areas(bottom);
+    let (events, logs) = if s.stratum.is_some() {
+        let [events, mining, logs] = Layout::horizontal([
+            Constraint::Percentage(30),
+            Constraint::Percentage(34),
+            Constraint::Percentage(36),
+        ])
+        .areas(bottom);
+        let inner = panel(f, mining, app, "STRATUM", "採掘");
+        draw_stratum_brief(f, app, s, inner);
+        (events, logs)
+    } else {
+        let [events, logs] =
+            Layout::horizontal([Constraint::Percentage(38), Constraint::Percentage(62)])
+                .areas(bottom);
+        (events, logs)
+    };
     let inner = panel(f, events, app, "EVENTS", "事象");
     draw_events(f, app, s, inner);
     let inner = panel(f, logs, app, "NODE LOG", "記録");
@@ -906,7 +949,11 @@ fn draw_header(f: &mut Frame, app: &App, s: &State, area: Rect) {
         Span::styled(format!("  {theme_name} ",), Style::new().fg(p.purple)),
         Span::styled(utc_clock(now), Style::new().fg(p.fg)),
         Span::styled(
-            "   t theme · m map · l log · ? help",
+            if s.stratum.is_some() {
+                "   t theme · m map · s stratum · l log · ? help"
+            } else {
+                "   t theme · m map · l log · ? help"
+            },
             Style::new().fg(p.faint),
         ),
     ]);
@@ -1572,7 +1619,20 @@ fn draw_tape(f: &mut Frame, app: &App, s: &State, area: Rect) {
                 (_, true) => "●",
                 _ => "■",
             };
-            let color = if newest && fresh { p.warn } else { tier[k] };
+            let ours = k == 2 && (b.ours > 0 || b.ours_block);
+            let sym = match (ours, b.ours_block, ghost) {
+                (true, true, _) => "★",
+                (true, false, true) => "◉",
+                (true, false, false) => "▩",
+                _ => sym,
+            };
+            let color = if newest && fresh {
+                p.warn
+            } else if ours {
+                p.ok
+            } else {
+                tier[k]
+            };
             if let Some(c) = buf.cell_mut((x, lane(k))) {
                 c.set_symbol(sym).set_fg(color);
                 if newest && fresh {
@@ -1618,6 +1678,8 @@ fn draw_events(f: &mut Frame, app: &App, s: &State, area: Rect) {
             "reorg" => ("REORG ", p.warn),
             "stall" | "offline" | "mismatch" => ("ALERT ", p.alert),
             "resume" | "online" => ("OK    ", p.ok),
+            "workshare" => ("SHARE ", p.ok),
+            "mined" => ("MINED ", p.warn),
             _ => ("INFO  ", p.dim),
         };
         lines.push(Line::from(vec![
@@ -1635,6 +1697,395 @@ fn draw_events(f: &mut Frame, app: &App, s: &State, area: Rect) {
         ));
     }
     f.render_widget(Paragraph::new(lines), area);
+}
+
+// ---------------------------------------------------------------- stratum
+
+fn algo_label(a: &str) -> (&'static str, usize) {
+    match a {
+        "kawpow" => ("KAWPOW", 0),
+        "sha256" => ("SHA", 1),
+        "scrypt" => ("SCRYPT", 2),
+        _ => ("?", 1),
+    }
+}
+
+fn uptime(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    if s >= 86_400 {
+        format!("{}d {}h", s / 86_400, (s % 86_400) / 3600)
+    } else {
+        format!("{}h {:02}m", s / 3600, (s / 60) % 60)
+    }
+}
+
+fn short_addr(a: &str) -> String {
+    if a.len() > 14 {
+        format!("{}…{}", &a[..8], &a[a.len() - 4..])
+    } else {
+        a.to_string()
+    }
+}
+
+/// The node's view of its stratum, or why there is none.
+fn stratum_state(s: &State) -> Result<&crate::state::Stratum, String> {
+    match &s.stratum {
+        None => Err("no stratum API: run with --stratum-api http://127.0.0.1:3336".into()),
+        Some(st) if !st.online && st.workers.is_empty() => Err(format!(
+            "stratum API unreachable: {}",
+            st.error.clone().unwrap_or_else(|| st.api.clone())
+        )),
+        Some(st) => Ok(st),
+    }
+}
+
+/// Overview lines shared by the panel and the full view.
+fn stratum_overview<'a>(p: &Pal, st: &crate::state::Stratum) -> Vec<Line<'a>> {
+    let mut lines = vec![Line::from(vec![
+        Span::styled("WORKERS ", Style::new().fg(p.dim)),
+        Span::styled(
+            st.workers_connected.to_string(),
+            Style::new().fg(p.text).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  MINERS ", Style::new().fg(p.dim)),
+        Span::styled(
+            st.miners.to_string(),
+            Style::new().fg(p.text).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  UP {}", uptime(st.uptime)),
+            Style::new().fg(p.dim),
+        ),
+        if st.online {
+            Span::raw("")
+        } else {
+            Span::styled("  STALE", Style::new().fg(p.alert))
+        },
+    ])];
+    for (name, i, a) in [
+        ("KAWPOW", 0, &st.kawpow),
+        ("SHA", 1, &st.sha),
+        ("SCRYPT", 2, &st.scrypt),
+    ] {
+        let c = [p.fg, p.purple, p.warn][i];
+        let idle = a.workers == 0;
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{name:<7}"),
+                Style::new()
+                    .fg(if idle { p.faint } else { c })
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{:>12}", si_rate(a.hashrate)),
+                Style::new().fg(if idle { p.faint } else { p.text }),
+            ),
+            Span::styled(
+                format!("  {:>6.3}% net", a.network_share * 100.0),
+                Style::new().fg(p.dim),
+            ),
+            Span::styled(
+                format!("  {:>6.2}/h", a.expected_per_hour),
+                Style::new().fg(if idle { p.faint } else { c }),
+            ),
+            Span::styled(format!("  {}w", a.workers), Style::new().fg(p.dim)),
+        ]));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("SHARES  ", Style::new().fg(p.dim)),
+        Span::styled(thousands(st.shares_valid), Style::new().fg(p.ok)),
+        Span::styled(" ok · ", Style::new().fg(p.dim)),
+        Span::styled(
+            thousands(st.shares_stale),
+            Style::new().fg(if st.shares_stale > 0 { p.warn } else { p.faint }),
+        ),
+        Span::styled(" stale · ", Style::new().fg(p.dim)),
+        Span::styled(
+            thousands(st.shares_invalid),
+            Style::new().fg(if st.shares_invalid > 0 {
+                p.alert
+            } else {
+                p.faint
+            }),
+        ),
+        Span::styled(" bad", Style::new().fg(p.dim)),
+    ]));
+    let oc = &st.onchain;
+    lines.push(Line::from(vec![
+        Span::styled("FOUND   ", Style::new().fg(p.dim)),
+        Span::styled(
+            thousands(st.workshares_found),
+            Style::new().fg(p.text).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" to node · chain ", Style::new().fg(p.dim)),
+        Span::styled(oc.workshares.to_string(), Style::new().fg(p.ok)),
+        Span::styled(" ws ", Style::new().fg(p.dim)),
+        Span::styled(
+            oc.blocks.to_string(),
+            Style::new().fg(if oc.blocks > 0 { p.warn } else { p.faint }),
+        ),
+        Span::styled(format!(" blk / {}", oc.window), Style::new().fg(p.dim)),
+    ]));
+    lines.push(if st.luck.shares == 0 {
+        Line::from(vec![
+            Span::styled("LUCK    ", Style::new().fg(p.dim)),
+            Span::styled("— no shares in the history yet", Style::new().fg(p.faint)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("LUCK    ", Style::new().fg(p.dim)),
+            Span::styled(
+                format!("best {:.1}%", st.luck.best),
+                Style::new().fg(p.text),
+            ),
+            Span::styled(
+                format!(" · avg {:.2}% · {} shares", st.luck.average, st.luck.shares),
+                Style::new().fg(p.dim),
+            ),
+        ])
+    });
+    lines
+}
+
+fn worker_line<'a>(p: &Pal, w: &crate::state::StratumWorker, now: u64, wide: bool) -> Line<'a> {
+    let (algo, i) = algo_label(&w.algorithm);
+    let c = [p.fg, p.purple, p.warn][i];
+    let last = if w.last_share_ms == 0 {
+        "—".to_string()
+    } else {
+        age((now.saturating_sub(w.last_share_ms) / 1000) as i64)
+    };
+    let mut spans = Vec::new();
+    if wide {
+        spans.push(Span::styled(
+            format!("{:<15}", short_addr(&w.address)),
+            Style::new().fg(p.dim),
+        ));
+    }
+    spans.extend([
+        Span::styled(
+            format!("{:<10}", w.name.chars().take(10).collect::<String>()),
+            Style::new().fg(p.text),
+        ),
+        Span::styled(format!("{algo:<7}"), Style::new().fg(c)),
+        Span::styled(
+            format!("{:>12}", si_rate(w.hashrate)),
+            Style::new().fg(p.text),
+        ),
+        Span::styled(
+            format!("  d{:<8}", compact_num(w.difficulty)),
+            Style::new().fg(p.dim),
+        ),
+        Span::styled(format!("{:>6}", w.valid), Style::new().fg(p.ok)),
+    ]);
+    if wide {
+        spans.push(Span::styled(
+            format!(" {:>3}", w.stale),
+            Style::new().fg(if w.stale > 0 { p.warn } else { p.faint }),
+        ));
+        spans.push(Span::styled(
+            format!(" {:>3}", w.invalid),
+            Style::new().fg(if w.invalid > 0 { p.alert } else { p.faint }),
+        ));
+    }
+    spans.push(Span::styled(format!("  {last:>4}"), Style::new().fg(p.dim)));
+    Line::from(spans)
+}
+
+/// `0.2`, `512`, `65.5k`.
+fn compact_num(v: f64) -> String {
+    if v <= 0.0 {
+        "—".into()
+    } else if v >= 1e6 {
+        format!("{:.1}M", v / 1e6)
+    } else if v >= 1e4 {
+        format!("{:.1}k", v / 1e3)
+    } else if v >= 100.0 || v.fract() == 0.0 {
+        format!("{v:.0}")
+    } else {
+        format!("{v:.3}")
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
+}
+
+/// The stratum panel on the dashboard: overview and the busiest workers.
+fn draw_stratum_brief(f: &mut Frame, app: &App, s: &State, area: Rect) {
+    let p = pal(app.theme);
+    let st = match stratum_state(s) {
+        Ok(st) => st,
+        Err(msg) => {
+            f.render_widget(
+                Paragraph::new(Line::styled(msg, Style::new().fg(p.dim)))
+                    .wrap(ratatui::widgets::Wrap { trim: true }),
+                area,
+            );
+            return;
+        }
+    };
+    let mut lines = stratum_overview(&p, st);
+    let room = (area.height as usize).saturating_sub(lines.len());
+    if room > 1 && !st.workers.is_empty() {
+        lines.push(Line::styled(
+            "WORKER    ALGO       HASHRATE  DIFF       OK  LAST",
+            Style::new().fg(p.faint),
+        ));
+        let now = now_ms();
+        for w in st.workers.iter().take(room - 1) {
+            lines.push(worker_line(&p, w, now, false));
+        }
+    }
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+/// `s`: every miner and worker on this node, and what became of their
+/// workshares.
+fn draw_mining(f: &mut Frame, app: &App, s: &State, area: Rect) {
+    let p = pal(app.theme);
+    let st = match stratum_state(s) {
+        Ok(st) => st,
+        Err(msg) => {
+            let inner = panel(f, area, app, "STRATUM", "採掘");
+            f.render_widget(
+                Paragraph::new(vec![
+                    Line::styled(msg, Style::new().fg(p.dim)),
+                    Line::raw(""),
+                    Line::styled(
+                        "rs-quai and go-quai serve it with --node.stratum-enabled (API on :3336)",
+                        Style::new().fg(p.faint),
+                    ),
+                ]),
+                inner,
+            );
+            return;
+        }
+    };
+    let [left, right] =
+        Layout::horizontal([Constraint::Percentage(42), Constraint::Percentage(58)]).areas(area);
+    let over_h = 9.min(left.height);
+    let [over, miners] =
+        Layout::vertical([Constraint::Length(over_h), Constraint::Min(0)]).areas(left);
+    let inner = panel(f, over, app, "STRATUM", "採掘");
+    f.render_widget(Paragraph::new(stratum_overview(&p, st)), inner);
+    // Miners: workers and what the chain paid them in the window.
+    let inner = panel(f, miners, app, "MINERS", "鉱夫");
+    let mut lines = vec![Line::styled(
+        format!(
+            "{:<15} {:>3}  {:<14} {:>5} {:>4}",
+            "ADDRESS", "WK", "ALGORITHMS", "WS", "BLK"
+        ),
+        Style::new().fg(p.faint),
+    )];
+    let mut by = st.onchain.by_address.clone();
+    by.sort_by(|a, b| {
+        (b.workshares + b.blocks * 100)
+            .cmp(&(a.workshares + a.blocks * 100))
+            .then(b.workers.cmp(&a.workers))
+    });
+    for a in by.iter().take((inner.height as usize).saturating_sub(3)) {
+        let algos = a
+            .algorithms
+            .iter()
+            .map(|x| algo_label(x).0)
+            .collect::<Vec<_>>()
+            .join("+");
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{:<15}", short_addr(&a.address)),
+                Style::new().fg(p.text),
+            ),
+            Span::styled(format!(" {:>3}", a.workers), Style::new().fg(p.dim)),
+            Span::styled(format!("  {algos:<14}"), Style::new().fg(p.fg)),
+            Span::styled(
+                format!(" {:>5}", a.workshares),
+                Style::new().fg(if a.workshares > 0 { p.ok } else { p.faint }),
+            ),
+            Span::styled(
+                format!(" {:>4}", a.blocks),
+                Style::new().fg(if a.blocks > 0 { p.warn } else { p.faint }),
+            ),
+        ]));
+    }
+    lines.push(Line::styled(
+        format!("paid in the last {} canonical blocks", st.onchain.window),
+        Style::new().fg(p.dim),
+    ));
+    lines.push(Line::styled(
+        format!(
+            "handed to the node: {} included, {} became blocks",
+            st.onchain.found_included, st.onchain.found_blocks
+        ),
+        Style::new().fg(p.dim),
+    ));
+    f.render_widget(Paragraph::new(lines), inner);
+    // Workers, then the workshares handed to the node.
+    let found_h = (right.height / 3).clamp(4, 14).min(right.height);
+    let [workers, found] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(found_h)]).areas(right);
+    let inner = panel(f, workers, app, "WORKERS", "作業");
+    let wide = inner.width >= 82;
+    let head = if wide {
+        "ADDRESS        WORKER    ALGO       HASHRATE  DIFF       OK  ST BAD  LAST"
+    } else {
+        "WORKER    ALGO       HASHRATE  DIFF       OK  LAST"
+    };
+    let mut lines = vec![Line::styled(head, Style::new().fg(p.faint))];
+    let now = now_ms();
+    let room = (inner.height as usize).saturating_sub(1);
+    let shown = st.workers.len().min(room);
+    let hidden = st.workers.len() - shown;
+    for w in st.workers.iter().take(if hidden > 0 {
+        shown.saturating_sub(1)
+    } else {
+        shown
+    }) {
+        lines.push(worker_line(&p, w, now, wide));
+    }
+    if hidden > 0 {
+        lines.push(Line::styled(
+            format!("… {} more workers", hidden + 1),
+            Style::new().fg(p.dim),
+        ));
+    }
+    if st.workers.is_empty() {
+        lines.push(Line::styled("no workers connected", Style::new().fg(p.dim)));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+    let inner = panel(f, found, app, "HANDED TO NODE", "提出");
+    let mut lines = Vec::new();
+    for x in st.found.iter().take(inner.height as usize) {
+        let (algo, i) = algo_label(&x.algorithm);
+        let (tag, c) = match x.status.as_str() {
+            "block" => ("BLOCK   ", p.warn),
+            "included" => ("INCLUDED", p.ok),
+            "unseen" => ("OLDER   ", p.faint),
+            _ => ("PENDING ", p.dim),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(utc_clock(x.found_ms), Style::new().fg(p.faint)),
+            Span::styled(
+                format!(" {tag} "),
+                Style::new().fg(c).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!("{} ", thousands(x.height)), Style::new().fg(p.text)),
+            Span::styled(
+                format!("{algo:<7}"),
+                Style::new().fg([p.fg, p.purple, p.warn][i]),
+            ),
+            Span::styled(
+                crate::collect::short_worker(&x.worker),
+                Style::new().fg(p.dim),
+            ),
+        ]));
+    }
+    if lines.is_empty() {
+        lines.push(Line::styled(
+            "no workshares yet: shares that meet the workshare target appear here",
+            Style::new().fg(p.dim),
+        ));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_logs(f: &mut Frame, app: &App, s: &State, area: Rect) {
@@ -1675,10 +2126,10 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
     let left = fl.until.saturating_sub(app.tick);
     match app.theme {
         Theme::Ghost => {
-            let title = if fl.prime {
-                "PRIME CONVERGENCE // 主鎖収束"
-            } else {
-                "REGION CONVERGENCE // 領域収束"
+            let title = match fl.kind {
+                Moment::Prime => "PRIME CONVERGENCE // 主鎖収束",
+                Moment::Region => "REGION CONVERGENCE // 領域収束",
+                Moment::Mined => "BLOCK ACQUIRED // 採掘成功",
             };
             let w = (title.chars().count() as u16 + 10)
                 .max(fl.text.len() as u16 + 6)
@@ -1690,11 +2141,12 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
                 height: 5.min(area.height),
             };
             let on = left % 4 < 2;
-            let (fg, bg) = if on { (p.bg, p.fg) } else { (p.fg, p.bg) };
+            let hue = if fl.kind == Moment::Mined { p.ok } else { p.fg };
+            let (fg, bg) = if on { (p.bg, hue) } else { (hue, p.bg) };
             f.render_widget(Clear, r);
             let block = Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::new().fg(p.fg))
+                .border_style(Style::new().fg(hue))
                 .style(Style::new().bg(bg));
             let text = vec![
                 Line::styled(title, Style::new().fg(fg).add_modifier(Modifier::BOLD)),
@@ -1715,7 +2167,11 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
                 height: 6.min(area.height),
             };
             let on = left % 4 < 2;
-            let bg = if fl.prime { p.alert } else { p.purple };
+            let bg = match fl.kind {
+                Moment::Prime => p.alert,
+                Moment::Region => p.purple,
+                Moment::Mined => p.ok,
+            };
             f.render_widget(Clear, r);
             let stripe: String = (0..area.width)
                 .map(|i| {
@@ -1726,10 +2182,10 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
                     }
                 })
                 .collect();
-            let title = if fl.prime {
-                "PATTERN PRIME — 主鎖確認"
-            } else {
-                "PATTERN REGION — 領域確認"
+            let title = match fl.kind {
+                Moment::Prime => "PATTERN PRIME — 主鎖確認",
+                Moment::Region => "PATTERN REGION — 領域確認",
+                Moment::Mined => "PATTERN MINED — 採掘確認",
             };
             let text = vec![
                 Line::styled(stripe.clone(), Style::new().fg(Color::Black).bg(bg)),
@@ -1757,7 +2213,7 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
 fn draw_help(f: &mut Frame, app: &App, area: Rect) {
     let p = pal(app.theme);
     let w = 46.min(area.width);
-    let h = 11.min(area.height);
+    let h = 12.min(area.height);
     let r = Rect {
         x: area.x + (area.width - w) / 2,
         y: area.y + (area.height - h) / 2,
@@ -1770,6 +2226,7 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
         kv(&p, "t", "toggle GHOST / ANGEL".into(), p.text),
         kv(&p, "m", "full-screen peer map".into(), p.text),
         kv(&p, "l", "full-height node log".into(), p.text),
+        kv(&p, "s", "stratum: miners on this node".into(), p.text),
         kv(&p, "? / h", "this help".into(), p.text),
         kv(&p, "q / Esc", "quit".into(), p.text),
         Line::raw(""),
@@ -2081,7 +2538,7 @@ mod tests {
                     app.help = true;
                     app.flash = Some(Flash {
                         until: tick + 5,
-                        prime: tick % 2 == 0,
+                        kind: [Moment::Prime, Moment::Region, Moment::Mined][(tick % 3) as usize],
                         text: "Prime block 1 (zone 2)".into(),
                     });
                     let mut offline = s.clone();
@@ -2089,6 +2546,198 @@ mod tests {
                     offline.node.error = Some("connection refused".into());
                     assert!(term.draw(|f| draw(f, &app, &offline)).is_ok());
                 }
+            }
+        }
+    }
+
+    fn with_stratum(mut s: State) -> State {
+        use crate::state::{AddressPaid, FoundShare, OnChain, Stratum, StratumAlgo, StratumWorker};
+        let w = |addr: &str, name: &str, algo: &str, h: f64, d: f64, ok: u64| StratumWorker {
+            address: addr.into(),
+            name: name.into(),
+            algorithm: algo.into(),
+            difficulty: d,
+            hashrate: h,
+            valid: ok,
+            stale: 1,
+            invalid: 0,
+            last_share_ms: now_ms() - 12_000,
+            connected_ms: now_ms() - 3_600_000,
+        };
+        let a = "0x00051234AbCdEf0123456789aBcDeF01234567Fe";
+        let b = "0x00771a5e0b3c9d24e6f8a1b2c3d4e5f60718293a";
+        s.stratum = Some(Stratum {
+            api: "http://127.0.0.1:3336".into(),
+            online: true,
+            uptime: 7_380.0,
+            workers_connected: 3,
+            workers_total: 4,
+            miners: 2,
+            shares_valid: 1_234,
+            shares_stale: 5,
+            shares_invalid: 2,
+            workshares_found: 17,
+            kawpow: StratumAlgo {
+                hashrate: 3.04e7,
+                workers: 1,
+                shares_valid: 300,
+                network_share: 1.0e-4,
+                expected_per_hour: 0.072,
+            },
+            sha: StratumAlgo {
+                hashrate: 4.58e14,
+                workers: 2,
+                shares_valid: 934,
+                network_share: 1.8e-3,
+                expected_per_hour: 5.4,
+            },
+            workers: vec![
+                w(b, "s21-01", "sha256", 2.31e14, 65536.0, 470),
+                w(b, "s21-02", "sha256", 2.27e14, 65536.0, 464),
+                w(a, "gpu0", "kawpow", 3.04e7, 0.2, 300),
+            ],
+            found: vec![
+                FoundShare {
+                    height: 10_390_404,
+                    hash: "0xb2".into(),
+                    worker: format!("{b}.s21-01"),
+                    algorithm: "sha256".into(),
+                    found_ms: now_ms() - 20_000,
+                    status: "block".into(),
+                },
+                FoundShare {
+                    height: 10_390_401,
+                    hash: "0xa1".into(),
+                    worker: format!("{a}.gpu0"),
+                    algorithm: "kawpow".into(),
+                    found_ms: now_ms() - 90_000,
+                    status: "included".into(),
+                },
+            ],
+            onchain: OnChain {
+                window: 96,
+                workshares: 6,
+                blocks: 1,
+                found_included: 1,
+                found_blocks: 1,
+                by_address: vec![
+                    AddressPaid {
+                        address: a.into(),
+                        workers: 1,
+                        algorithms: vec!["kawpow".into()],
+                        workshares: 1,
+                        blocks: 0,
+                    },
+                    AddressPaid {
+                        address: b.into(),
+                        workers: 2,
+                        algorithms: vec!["sha256".into()],
+                        workshares: 5,
+                        blocks: 1,
+                    },
+                ],
+            },
+            ..Default::default()
+        });
+        s
+    }
+
+    fn render_state(s: &State, theme: Theme, w: u16, h: u16, view: View) -> String {
+        let Ok(mut term) = Terminal::new(TestBackend::new(w, h));
+        let mut app = App::new(theme);
+        app.tick = BOOT_TICKS + 3;
+        app.view = view;
+        app.observe(s);
+        if term.draw(|f| draw(f, &app, s)).is_err() {
+            return "draw error".into();
+        }
+        let buf = term.backend().buffer().clone();
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            let mut x = 0;
+            while x < buf.area.width {
+                let sym = buf.cell((x, y)).map_or(" ", |c| c.symbol());
+                out.push_str(sym);
+                x += if sym.chars().next().is_some_and(wide) {
+                    2
+                } else {
+                    1
+                };
+            }
+            out.push('\n');
+        }
+        if std::env::var("QUAI_DASH_SHOW").is_ok() {
+            println!("{out}");
+        }
+        out
+    }
+
+    #[test]
+    fn renders_the_stratum() {
+        let s = with_stratum(sample());
+        for theme in [Theme::Ghost, Theme::Angel] {
+            let d = render_state(&s, theme, 160, 48, View::Dash);
+            for want in [
+                "STRATUM",
+                "WORKERS 3",
+                "MINERS 2",
+                "s21-01",
+                "1,234",
+                "s stratum",
+            ] {
+                assert!(d.contains(want), "dashboard lacks {want:?}\n{d}");
+            }
+            let m = render_state(&s, theme, 160, 48, View::Mining);
+            for want in [
+                "MINERS",
+                "HANDED TO NODE",
+                "BLOCK",
+                "INCLUDED",
+                "gpu0",
+                "0x000512…67Fe",
+                "KAWPOW",
+                "30.40 MH/s",
+                "d0.2",
+                "paid in the last 96 canonical blocks",
+                "1 included, 1 became blocks",
+            ] {
+                assert!(m.contains(want), "mining view lacks {want:?}\n{m}");
+            }
+        }
+        // Not configured: the view says how, the dashboard keeps its layout.
+        let bare = sample();
+        let m = render_state(&bare, Theme::Ghost, 120, 40, View::Mining);
+        assert!(m.contains("--stratum-api"), "{m}");
+        let d = render_state(&bare, Theme::Ghost, 160, 48, View::Dash);
+        assert!(!d.contains("STRATUM") && d.contains("EVENTS"), "{d}");
+        // Unreachable.
+        let mut down = with_stratum(sample());
+        if let Some(st) = down.stratum.as_mut() {
+            st.online = false;
+            st.workers.clear();
+            st.error = Some("connection refused".into());
+        }
+        let d = render_state(&down, Theme::Angel, 160, 48, View::Dash);
+        assert!(d.contains("unreachable"), "{d}");
+        // A mined block takes the screen.
+        let mut s2 = with_stratum(sample());
+        let mut app = App::new(Theme::Ghost);
+        app.tick = BOOT_TICKS + 3;
+        app.observe(&s2);
+        s2.push_event(
+            now_ms() + 10,
+            "mined",
+            "Block 10390405 mined through this node by 0x000512…67Fe.gpu0 (kawpow)".into(),
+            Some(10_390_405),
+        );
+        app.observe(&s2);
+        assert!(app.flash.as_ref().is_some_and(|f| f.kind == Moment::Mined));
+        for (w, h) in [(160, 48), (40, 10), (8, 3)] {
+            let Ok(mut term) = Terminal::new(TestBackend::new(w, h));
+            for theme in [Theme::Ghost, Theme::Angel] {
+                app.theme = theme;
+                app.view = View::Mining;
+                assert!(term.draw(|f| draw(f, &app, &s2)).is_ok());
             }
         }
     }

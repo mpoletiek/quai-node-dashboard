@@ -15,6 +15,7 @@ use crate::state::{
     Algo, BLOCK_HISTORY, BlockInfo, Compare, Head, Mining, Peer, PendingShares, Place, State,
     location_name, now_ms,
 };
+use crate::stratum;
 
 /// What to watch.
 pub struct Config {
@@ -34,6 +35,8 @@ pub struct Config {
     pub here: Option<Place>,
     /// Seconds without a new zone block before a stall event.
     pub stall_secs: u64,
+    /// The node's stratum API.
+    pub stratum: Option<Endpoint>,
 }
 
 fn block_info(b: &Value) -> Option<BlockInfo> {
@@ -67,7 +70,21 @@ fn block_info(b: &Value) -> Option<BlockInfo> {
         region_number: num_at(1),
         exchange_rate: hex_dec(&h["exchangeRate"]),
         size: hex_u64(&b["size"]),
+        ours: 0,
+        ours_block: false,
+        ws_coinbases: ws_field(b, "primaryCoinbase"),
+        ws_hashes: ws_field(b, "hash"),
     })
+}
+
+/// One string field of every workshare a block carries.
+fn ws_field(b: &Value, key: &str) -> Vec<String> {
+    b["workshares"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|w| w[key].as_str().map(str::to_string))
+        .collect()
 }
 
 /// The latest block of a prime (`ctx` 0) or region (1) endpoint, numbered
@@ -142,6 +159,72 @@ fn pending(v: &Value) -> PendingShares {
     p
 }
 
+/// What the stratum events have already announced.
+#[derive(Default)]
+struct StratumSeen {
+    /// Polled at least once (the first poll announces nothing).
+    started: bool,
+    /// Workshares handed to the node, by hash.
+    found: std::collections::HashSet<String>,
+    /// Of those, the ones announced as canonical blocks.
+    mined: std::collections::HashSet<String>,
+}
+
+/// Events for workshares the stratum handed to the node since the last
+/// poll, and for those that became the canonical block.
+fn stratum_events(seen: &mut StratumSeen, s: &crate::state::Stratum, st: &mut State, now: u64) {
+    for f in s.found.iter().rev() {
+        let fresh = seen.found.insert(f.hash.clone());
+        if fresh && seen.started {
+            st.push_event(
+                now,
+                "workshare",
+                format!(
+                    "Workshare from {} ({}) at zone {}",
+                    short_worker(&f.worker),
+                    f.algorithm,
+                    f.height
+                ),
+                Some(f.height),
+            );
+        }
+        if f.status == "block" && seen.mined.insert(f.hash.clone()) && seen.started {
+            st.push_event(
+                now,
+                "mined",
+                format!(
+                    "Block {} mined through this node by {} ({})",
+                    f.height,
+                    short_worker(&f.worker),
+                    f.algorithm
+                ),
+                Some(f.height),
+            );
+        }
+    }
+    // Keep only what the stratum still lists (it lists newest first, so a
+    // dropped hash never comes back).
+    let listed: std::collections::HashSet<&String> = s.found.iter().map(|f| &f.hash).collect();
+    seen.found.retain(|h| listed.contains(h));
+    seen.mined.retain(|h| listed.contains(h));
+    seen.started = true;
+}
+
+/// `0x00051234…67Fe.gpu0` from `0x00051234AbCd…67Fe.gpu0`.
+pub fn short_worker(w: &str) -> String {
+    let (addr, name) = w.split_once('.').unwrap_or((w, ""));
+    let a = if addr.len() > 14 {
+        format!("{}…{}", &addr[..10], &addr[addr.len() - 4..])
+    } else {
+        addr.to_string()
+    };
+    if name.is_empty() {
+        a
+    } else {
+        format!("{a}.{name}")
+    }
+}
+
 /// Runs forever, updating `state`.
 pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
     let mut last_zone: u64 = 0;
@@ -151,6 +234,7 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
     let mut geo_cache: HashMap<IpAddr, Option<Place>> = HashMap::new();
     let mut first_seen: HashMap<IpAddr, u64> = HashMap::new();
     let mut cmp_hashes: VecDeque<(u64, String)> = VecDeque::new();
+    let mut stratum_seen = StratumSeen::default();
     let rpc_ports: Vec<u16> = [Some(&cfg.zone), cfg.region.as_ref(), cfg.prime.as_ref()]
         .into_iter()
         .flatten()
@@ -376,6 +460,36 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
                 }
                 st.peers.list = list;
                 st.peers.note = note;
+            }
+        }
+        // The node's stratum: every 3 s; on-chain settling every tick.
+        if let Some(ep) = &cfg.stratum {
+            if tick % 3 == 0 {
+                let polled = stratum::fetch(ep);
+                if let Ok(mut st) = state.lock() {
+                    let st = &mut *st;
+                    match polled {
+                        Ok(p) => {
+                            let mut s = stratum::build(&ep.url, &p, st.mining.as_ref());
+                            stratum::settle(&mut s, &mut st.blocks);
+                            stratum_events(&mut stratum_seen, &s, st, now);
+                            st.stratum = Some(s);
+                        }
+                        Err(e) => {
+                            let s = st.stratum.get_or_insert_with(|| crate::state::Stratum {
+                                api: ep.url.clone(),
+                                ..Default::default()
+                            });
+                            s.online = false;
+                            s.error = Some(e);
+                        }
+                    }
+                }
+            } else if let Ok(mut st) = state.lock() {
+                let st = &mut *st;
+                if let Some(s) = st.stratum.as_mut() {
+                    stratum::settle(s, &mut st.blocks);
+                }
             }
         }
         // Comparison node: same hash at the same height?

@@ -31,6 +31,10 @@ pub struct State {
     pub peers: Peers,
     /// A second node compared block by block (for example go-quai next to rs-quai).
     pub compare: Option<Compare>,
+    /// The node's stratum server seen through its API (`--stratum-api`):
+    /// every miner and worker connected to this node. `None` when not
+    /// configured.
+    pub stratum: Option<Stratum>,
     /// Notable moments: prime and region blocks, reorgs, stalls, peers.
     pub events: VecDeque<Event>,
     /// Tail of the node's log file.
@@ -121,6 +125,19 @@ pub struct BlockInfo {
     pub exchange_rate: String,
     /// Size in bytes.
     pub size: u64,
+    /// Workshares in this block paid to an address mining on this node's
+    /// stratum.
+    pub ours: u32,
+    /// Whether the block itself is paid to an address mining on this
+    /// node's stratum.
+    pub ours_block: bool,
+    /// Coinbases of the block's workshares (for the stratum's on-chain
+    /// count; not sent to the browser).
+    #[serde(skip)]
+    pub ws_coinbases: Vec<String>,
+    /// Hashes of the block's workshares (not sent to the browser).
+    #[serde(skip)]
+    pub ws_hashes: Vec<String>,
 }
 
 /// `quai_getMiningInfo`, decoded.
@@ -238,12 +255,162 @@ pub struct Compare {
     pub last_mismatch: Option<u64>,
 }
 
+/// The node's stratum server: the miners and workers connected to it, what
+/// they submit, and what became workshares and blocks.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Stratum {
+    /// API endpoint.
+    pub api: String,
+    /// Whether the API answered on the last poll.
+    pub online: bool,
+    /// Last error, when it did not.
+    pub error: Option<String>,
+    /// Seconds since the stratum started.
+    pub uptime: f64,
+    /// Workers connected now.
+    pub workers_connected: u32,
+    /// Workers seen since the stratum started.
+    pub workers_total: u32,
+    /// Distinct payout addresses behind the connected workers.
+    pub miners: u32,
+    /// Accepted shares.
+    pub shares_valid: u64,
+    /// Late shares.
+    pub shares_stale: u64,
+    /// Rejected shares.
+    pub shares_invalid: u64,
+    /// Shares that met the workshare target and went to the node.
+    pub workshares_found: u64,
+    /// KawPoW.
+    pub kawpow: StratumAlgo,
+    /// SHA-256d.
+    pub sha: StratumAlgo,
+    /// Scrypt.
+    pub scrypt: StratumAlgo,
+    /// Connected workers, busiest first.
+    pub workers: Vec<StratumWorker>,
+    /// Share luck from the recent share history.
+    pub luck: ShareLuck,
+    /// Recent workshares handed to the node, newest first.
+    pub found: Vec<FoundShare>,
+    /// What the canonical chain paid to the stratum's miners.
+    pub onchain: OnChain,
+}
+
+/// One algorithm on the stratum.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct StratumAlgo {
+    /// Hashes per second from this node's workers.
+    pub hashrate: f64,
+    /// Connected workers.
+    pub workers: u32,
+    /// Valid shares.
+    pub shares_valid: u64,
+    /// This node's fraction of the network's hashrate (0..1).
+    pub network_share: f64,
+    /// Expected workshares per hour at that fraction.
+    pub expected_per_hour: f64,
+}
+
+/// One worker (a rig or miner process) on the stratum.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct StratumWorker {
+    /// Payout address.
+    pub address: String,
+    /// Worker name.
+    pub name: String,
+    /// `kawpow`, `sha256` or `scrypt`.
+    pub algorithm: String,
+    /// Stratum difficulty of its last share (0 before the first).
+    pub difficulty: f64,
+    /// Estimated hashes per second.
+    pub hashrate: f64,
+    /// Valid shares.
+    pub valid: u64,
+    /// Stale shares.
+    pub stale: u64,
+    /// Invalid shares.
+    pub invalid: u64,
+    /// Unix milliseconds of its last share (0: none yet).
+    pub last_share_ms: u64,
+    /// Unix milliseconds it connected.
+    pub connected_ms: u64,
+}
+
+/// Share luck (`/api/pool/shares`).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ShareLuck {
+    /// Shares in the history.
+    pub shares: u64,
+    /// Current workshare difficulty, in stratum units.
+    pub workshare_diff: f64,
+    /// Mean achieved / workshare difficulty, in percent.
+    pub average: f64,
+    /// Best share, in percent of the workshare difficulty.
+    pub best: f64,
+    /// Shares expected per workshare at the current difficulties.
+    pub expected_shares: f64,
+}
+
+/// A workshare the stratum handed to the node.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct FoundShare {
+    /// Zone height of its template.
+    pub height: u64,
+    /// Work object hash.
+    pub hash: String,
+    /// `address.worker`.
+    pub worker: String,
+    /// Algorithm.
+    pub algorithm: String,
+    /// Unix milliseconds.
+    pub found_ms: u64,
+    /// `block` (it is the canonical block at its height), `included` (a
+    /// canonical block carries it as a workshare), `pending` (not in the
+    /// window yet) or `unseen` (older than the window).
+    pub status: String,
+}
+
+/// Paid on-chain to the stratum's miners, over the recent block window.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct OnChain {
+    /// Canonical blocks scanned.
+    pub window: u32,
+    /// Workshares in those blocks paid to the miners' addresses.
+    pub workshares: u32,
+    /// Blocks paid to the miners' addresses.
+    pub blocks: u32,
+    /// Workshares handed to the node that a canonical block includes.
+    pub found_included: u32,
+    /// Workshares handed to the node that became the canonical block.
+    pub found_blocks: u32,
+    /// Per miner address.
+    pub by_address: Vec<AddressPaid>,
+}
+
+/// One miner address on the stratum and what the chain paid it.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct AddressPaid {
+    /// Address.
+    pub address: String,
+    /// Connected workers.
+    pub workers: u32,
+    /// Algorithms its workers mine.
+    pub algorithms: Vec<String>,
+    /// Workshares paid in the window.
+    pub workshares: u32,
+    /// Blocks paid in the window.
+    pub blocks: u32,
+}
+
 /// A notable moment.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Event {
     /// Unix milliseconds.
     pub t_ms: u64,
-    /// `prime`, `region`, `reorg`, `stall`, `resume`, `peer`, `offline`, `online`, `mismatch`.
+    /// `prime`, `region`, `reorg`, `stall`, `resume`, `peer`, `offline`,
+    /// `online`, `mismatch`, `workshare` (found by this node's stratum) or
+    /// `mined` (a block found by this node's stratum).
     pub kind: String,
     /// Human text.
     pub text: String,

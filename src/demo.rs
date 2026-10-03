@@ -6,9 +6,70 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::state::{
-    Algo, BLOCK_HISTORY, BlockInfo, Chains, Compare, Head, Mining, Peer, Peers, PendingShares,
-    Place, State, now_ms,
+    AddressPaid, Algo, BLOCK_HISTORY, BlockInfo, Chains, Compare, FoundShare, Head, Mining, Peer,
+    Peers, PendingShares, Place, ShareLuck, State, Stratum, StratumAlgo, StratumWorker, now_ms,
 };
+
+/// The demo stratum's workers: payout address, name, algorithm, hashes per
+/// second, stratum difficulty.
+const WORKERS: &[(&str, &str, &str, f64, f64)] = &[
+    (
+        "0x0042f6d1c9a3b2e7f05a44c1d8e2b9a7c6f30a11",
+        "farm-a",
+        "kawpow",
+        1.21e9,
+        2.0,
+    ),
+    (
+        "0x0042f6d1c9a3b2e7f05a44c1d8e2b9a7c6f30a11",
+        "farm-b",
+        "kawpow",
+        0.88e9,
+        2.0,
+    ),
+    (
+        "0x00771a5e0b3c9d24e6f8a1b2c3d4e5f60718293a",
+        "s21-01",
+        "sha256",
+        2.31e14,
+        65536.0,
+    ),
+    (
+        "0x00771a5e0b3c9d24e6f8a1b2c3d4e5f60718293a",
+        "s21-02",
+        "sha256",
+        2.27e14,
+        65536.0,
+    ),
+    (
+        "0x0029c4b7a1d0e9f8c7b6a5948372615049382716",
+        "s19-xp",
+        "sha256",
+        1.38e14,
+        32768.0,
+    ),
+    (
+        "0x0013e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a291",
+        "l9-01",
+        "scrypt",
+        1.72e10,
+        1024.0,
+    ),
+    (
+        "0x0013e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a291",
+        "l9-02",
+        "scrypt",
+        1.65e10,
+        1024.0,
+    ),
+    (
+        "0x00c4a9e3f1b7d5c3a1e9f7d5b3a1c9e7f5d3b1a9",
+        "gpu0",
+        "kawpow",
+        3.04e7,
+        0.2,
+    ),
+];
 
 const CITIES: &[(f64, f64, &str, &str)] = &[
     (40.71, -74.0, "New York", "US"),
@@ -73,6 +134,11 @@ struct Demo {
     region: u64,
     prime: u64,
     next_block_ms: u64,
+    /// Valid, stale and invalid shares per worker.
+    shares: Vec<(u64, u64, u64)>,
+    /// Workshares the demo stratum handed to the node, newest first.
+    found: Vec<FoundShare>,
+    started_ms: u64,
 }
 
 impl Demo {
@@ -96,15 +162,63 @@ impl Demo {
             .blocks
             .back()
             .map_or_else(|| self.rng.hash(), |b| b.hash.clone());
+        // Other miners' workshares, plus up to two of the demo stratum's
+        // pending ones; now and then the block itself was found through
+        // this node.
+        let mut ws_coinbases: Vec<String> = Vec::new();
+        let mut ws_hashes: Vec<String> = Vec::new();
+        for _ in 0..(self.rng.f() * 10.0) as usize {
+            ws_coinbases.push(format!("0x00{}", &self.rng.hash()[4..42]));
+            ws_hashes.push(self.rng.hash());
+        }
+        let mut taken = 0;
+        for i in 0..self.found.len() {
+            if self.found[i].status == "pending" && taken < 2 && self.rng.f() < 0.7 {
+                let f = &self.found[i];
+                ws_coinbases.push(f.worker.split('.').next().unwrap_or("").to_string());
+                ws_hashes.push(f.hash.clone());
+                taken += 1;
+            }
+        }
+        let hash = self.rng.hash();
+        let coinbase = if !quiet && self.rng.f() < 0.06 {
+            let w = WORKERS[(self.rng.next() % WORKERS.len() as u64) as usize];
+            let worker = format!("{}.{}", w.0, w.1);
+            st.push_event(
+                t_ms,
+                "mined",
+                format!(
+                    "Block {} mined through this node by {} ({})",
+                    self.zone,
+                    crate::collect::short_worker(&worker),
+                    w.2
+                ),
+                Some(self.zone),
+            );
+            self.found.insert(
+                0,
+                FoundShare {
+                    height: self.zone,
+                    hash: hash.clone(),
+                    worker,
+                    algorithm: w.2.into(),
+                    found_ms: t_ms,
+                    status: "block".into(),
+                },
+            );
+            w.0.to_string()
+        } else {
+            format!("0x00{}", &self.rng.hash()[4..42])
+        };
         let b = BlockInfo {
             number: self.zone,
-            hash: self.rng.hash(),
+            hash,
             parent,
             timestamp: t_ms / 1000,
             seen_ms: t_ms,
             txs: (self.rng.f().powi(3) * 40.0) as u32,
             etxs: (self.rng.f() * 18.0) as u32,
-            workshares: (self.rng.f() * 14.0) as u32,
+            workshares: ws_hashes.len() as u32,
             gas_used: (self.rng.f().powi(2) * 18e6) as u64,
             gas_limit: 50_000_000,
             base_fee: format!(
@@ -113,12 +227,16 @@ impl Demo {
             ),
             order,
             difficulty: format!("{}", 1_038_000_000_000u64 + self.rng.next() % 4_000_000_000),
-            coinbase: format!("0x00{}", &self.rng.hash()[4..42]),
+            coinbase,
             auxpow: true,
             prime_number: self.prime,
             region_number: self.region,
             exchange_rate: "13264669140000000000".into(),
             size: 3000 + self.rng.next() % 9000,
+            ours: 0,
+            ours_block: false,
+            ws_coinbases,
+            ws_hashes,
         };
         if !quiet {
             st.push_log(
@@ -222,12 +340,135 @@ impl Demo {
             scrypt: (self.rng.next() % 8) as u32,
             progpow: 0,
         };
+        self.stratum(st, now);
         if let Some(c) = st.compare.as_mut() {
             c.height = self.zone;
             c.compared = (c.compared + 1).min(64);
             c.matched = c.compared;
         }
         st.now_ms = now;
+    }
+}
+
+impl Demo {
+    /// The demo stratum: each worker submits a share about every 30 s, and
+    /// about every 30 s one of them meets the workshare target and goes to
+    /// the node.
+    fn stratum(&mut self, st: &mut State, now: u64) {
+        for i in 0..WORKERS.len() {
+            if self.rng.f() < 1.0 / 30.0 {
+                let r = self.rng.f();
+                let sh = &mut self.shares[i];
+                if r < 0.985 {
+                    sh.0 += 1;
+                } else if r < 0.995 {
+                    sh.1 += 1;
+                } else {
+                    sh.2 += 1;
+                }
+            }
+        }
+        if self.rng.f() < 1.0 / 30.0 {
+            let w = WORKERS[(self.rng.next() % WORKERS.len() as u64) as usize];
+            let f = FoundShare {
+                height: self.zone + 1,
+                hash: self.rng.hash(),
+                worker: format!("{}.{}", w.0, w.1),
+                algorithm: w.2.into(),
+                found_ms: now,
+                status: "pending".into(),
+            };
+            st.push_event(
+                now,
+                "workshare",
+                format!(
+                    "Workshare from {} ({}) at zone {}",
+                    crate::collect::short_worker(&f.worker),
+                    f.algorithm,
+                    f.height
+                ),
+                Some(f.height),
+            );
+            self.found.insert(0, f);
+        }
+        self.found.truncate(32);
+        let mut workers: Vec<StratumWorker> = Vec::new();
+        for (i, w) in WORKERS.iter().enumerate() {
+            let jitter = 1.0 + (self.rng.f() - 0.5) * 0.08;
+            workers.push(StratumWorker {
+                address: w.0.into(),
+                name: w.1.into(),
+                algorithm: w.2.into(),
+                difficulty: w.4,
+                hashrate: w.3 * jitter,
+                valid: self.shares[i].0,
+                stale: self.shares[i].1,
+                invalid: self.shares[i].2,
+                last_share_ms: now - (i as u64 * 7_300) % 29_000,
+                connected_ms: self.started_ms - 3_600_000 * (i as u64 % 3 + 1),
+            });
+        }
+        workers.sort_by(|a, b| b.hashrate.total_cmp(&a.hashrate));
+        let algo = |name: &str, net: Option<&Algo>| {
+            let ws: Vec<&StratumWorker> = workers.iter().filter(|w| w.algorithm == name).collect();
+            let hashrate: f64 = ws.iter().map(|w| w.hashrate).sum();
+            let mut a = StratumAlgo {
+                hashrate,
+                workers: ws.len() as u32,
+                shares_valid: ws.iter().map(|w| w.valid).sum(),
+                ..Default::default()
+            };
+            if let Some(n) = net.filter(|n| n.hashrate > 0.0) {
+                a.network_share = hashrate / n.hashrate;
+                a.expected_per_hour = a.network_share * 3600.0 / n.share_time.max(0.1);
+            }
+            a
+        };
+        let m = st.mining.clone();
+        let mut by: std::collections::BTreeMap<String, AddressPaid> = Default::default();
+        for w in &workers {
+            let e = by.entry(w.address.clone()).or_insert_with(|| AddressPaid {
+                address: w.address.clone(),
+                ..Default::default()
+            });
+            e.workers += 1;
+            if !e.algorithms.contains(&w.algorithm) {
+                e.algorithms.push(w.algorithm.clone());
+            }
+        }
+        let mut s = Stratum {
+            api: "demo".into(),
+            online: true,
+            uptime: (now - self.started_ms) as f64 / 1000.0 + 3600.0 * 3.0,
+            workers_connected: workers.len() as u32,
+            workers_total: workers.len() as u32 + 2,
+            miners: by.len() as u32,
+            shares_valid: self.shares.iter().map(|s| s.0).sum(),
+            shares_stale: self.shares.iter().map(|s| s.1).sum(),
+            shares_invalid: self.shares.iter().map(|s| s.2).sum(),
+            workshares_found: 214 + self.found.len() as u64,
+            kawpow: algo("kawpow", m.as_ref().map(|m| &m.kawpow)),
+            sha: algo("sha256", m.as_ref().map(|m| &m.sha)),
+            scrypt: algo("scrypt", m.as_ref().map(|m| &m.scrypt)),
+            luck: ShareLuck {
+                shares: self.shares.iter().map(|s| s.0).sum::<u64>().min(500),
+                workshare_diff: 4523.7,
+                average: 0.41,
+                best: 131.6,
+                expected_shares: 11_034.0,
+            },
+            found: self.found.clone(),
+            workers,
+            ..Default::default()
+        };
+        s.onchain.by_address = by.into_values().collect();
+        crate::stratum::settle(&mut s, &mut st.blocks);
+        for f in &mut self.found {
+            if let Some(g) = s.found.iter().find(|g| g.hash == f.hash) {
+                f.status = g.status.clone();
+            }
+        }
+        st.stratum = Some(s);
     }
 }
 
@@ -249,6 +490,11 @@ pub fn run(state: Arc<Mutex<State>>) {
         region: 5_579_751,
         prime: 2_297_891,
         next_block_ms: now + 2500,
+        shares: (0..WORKERS.len() as u64)
+            .map(|i| (300 + (i * 97) % 400, (i * 3) % 7, i % 2))
+            .collect(),
+        found: Vec::new(),
+        started_ms: now,
     };
     if let Ok(mut st) = state.lock() {
         st.node.label = "DEMO NODE".into();

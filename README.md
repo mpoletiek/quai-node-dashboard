@@ -7,7 +7,8 @@ the PoW algorithms, title cards for prime blocks).
 
 It works the same against **rs-quai** and **go-quai**. Everything comes
 from what both nodes already offer: their JSON-RPC, their `nodelogs`
-directory, and the node process's TCP connections (for the peer map).
+directory, the node process's TCP connections (for the peer map) and,
+when the node runs a stratum, its stratum API (for the mining view).
 
 ```sh
 cargo build --release -p rsq-dash          # target/release/quai-dash
@@ -15,6 +16,8 @@ cargo build --release -p rsq-dash          # target/release/quai-dash
 # on the node's host
 quai-dash web --logs ~/node/nodelogs --listen 127.0.0.1:8095
 quai-dash tui --logs ~/node/nodelogs --theme angel
+# with the node's stratum (--node.stratum-enabled)
+quai-dash tui --logs ~/node/nodelogs --stratum-api http://127.0.0.1:3336
 ```
 
 ## What it shows
@@ -36,6 +39,39 @@ quai-dash tui --logs ~/node/nodelogs --theme angel
   and mismatches against a comparison node.
 - With `--compare`, a second node (for example go-quai next to rs-quai)
   is checked block by block. The result is shown as a sync ratio.
+- With `--stratum-api`, the node's mining: see [Mining](#mining).
+
+## Mining
+
+`--stratum-api` points at the stratum API of the node being watched
+(`--node.stratum-api-addr`, port 3336 by default; rs-quai's is a port of
+go-quai's, so both work). The view is the node's: every miner (payout
+address) and worker (rig or miner process) connected to its stratum, on
+all three algorithms.
+
+- **Overview:** workers connected and the miners behind them; per
+  algorithm, this node's hashrate, its share of the network's
+  (`quai_getMiningInfo`) and the workshares an hour that share should
+  find; shares accepted, stale and rejected; share luck.
+- **Workers:** a table of every connected worker: address, name,
+  algorithm, hashrate, stratum difficulty, shares and the age of its last
+  share. The stratum reports a worker's hashrate as a slow average of its
+  accepted share difficulty, and its difficulty only after its first share.
+- **Handed to the node:** each share that met the workshare target and went
+  to the node, settled against the chain: `BLOCK` (it is the canonical
+  block at its height), `INCLUDED` (a canonical block carries it as a
+  workshare), `PENDING`, or `OLDER` (from before the blocks on screen).
+- **Paid on-chain:** per miner address, the workshares and blocks the
+  recent canonical blocks pay it. The lattice rings those blocks, and
+  stars a block found through this node.
+- **Events:** each workshare the stratum hands to the node, and each block
+  mined through it. A mined block gets its own full-screen moment in both
+  looks.
+
+Without `--stratum-api` the panel says how to enable it; if the API stops
+answering, the panel says so and the rest of the dashboard carries on.
+The API should stay on the node's host (it has no authentication): run
+quai-dash there, or tunnel it.
 
 ## Options
 
@@ -50,6 +86,7 @@ quai-dash tui --logs ~/node/nodelogs --theme angel
 | `--geoip-online` | off | locate peers with ip-api.com instead |
 | `--here LAT,LON` | none | this node's position on the map |
 | `--stall-secs N` | 60 | seconds without a zone block before a stall event |
+| `--stratum-api URL` | none | the node's stratum API, for the mining view (also `QUAI_DASH_STRATUM_API`) |
 | `web --listen ADDR` | `127.0.0.1:8090` | where the web dashboard listens |
 | `tui --theme ghost\|angel` | `ghost` | starting look |
 | `tui --graphics auto\|on\|off` | `auto` | pixel peer map (kitty graphics protocol) |
@@ -109,18 +146,20 @@ map.
   off. The map can be dragged to rotate. A link ending in `#angel` or
   `#ghost` opens that look.
 - **TUI:**
-  - `t` switches the look; `m` shows the map full screen; `l` shows the
-    log full height.
+  - `t` switches the look; `m` shows the map full screen; `s` shows the
+    stratum (miners, workers, workshares) full screen; `l` shows the log
+    full height.
   - `?` opens help; `q` or Esc quits.
   - Below 100×28 the layout keeps only the essentials.
 
 ## Demo mode
 
 `quai-dash web --demo` and `quai-dash tui --demo` show an invented node,
-for trying the dashboard without one.
+for trying the dashboard without one, including a stratum with five
+miners and eight workers on all three algorithms.
 
 `quai-dash record --out tour.json` drives the real terminal renderer
-through a scripted tour on demo data (both looks, map, log, help) and
+through a scripted tour on demo data (both looks, map, stratum, log, help) and
 saves the changed cells per frame; `web/tui.html` plays such a file back
 in a browser.
 

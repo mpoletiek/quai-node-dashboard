@@ -66,6 +66,21 @@ impl Endpoint {
 
     /// POSTs `body` and returns the response body of a 200.
     pub fn post(&self, body: &str) -> Result<Vec<u8>, String> {
+        self.request("POST", &self.path, Some(body))
+    }
+
+    /// GETs `path` (with any query) on this host and returns the body of a 200.
+    pub fn get(&self, path: &str) -> Result<Vec<u8>, String> {
+        let base = self.path.trim_end_matches('/');
+        self.request("GET", &format!("{base}{path}"), None)
+    }
+
+    /// GETs `path` and parses the JSON body.
+    pub fn get_json(&self, path: &str) -> Result<Value, String> {
+        serde_json::from_slice(&self.get(path)?).map_err(|e| e.to_string())
+    }
+
+    fn request(&self, method: &str, path: &str, body: Option<&str>) -> Result<Vec<u8>, String> {
         let addr = (self.host.as_str(), self.port)
             .to_socket_addrs()
             .map_err(|e| e.to_string())?
@@ -76,14 +91,18 @@ impl Endpoint {
             .map_err(|e| e.to_string())?;
         s.set_write_timeout(Some(self.timeout))
             .map_err(|e| e.to_string())?;
-        let req = format!(
-            "POST {} HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            self.path,
-            self.host,
-            self.port,
-            body.len(),
-            body
-        );
+        let req = match body {
+            Some(body) => format!(
+                "{method} {path} HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                self.host,
+                self.port,
+                body.len(),
+            ),
+            None => format!(
+                "{method} {path} HTTP/1.1\r\nHost: {}:{}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
+                self.host, self.port,
+            ),
+        };
         s.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
         let mut r = BufReader::new(s);
         let mut status = String::new();

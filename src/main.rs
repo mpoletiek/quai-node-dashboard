@@ -4,7 +4,7 @@
 //! Everything comes from what every node already offers: the zone, region
 //! and prime JSON-RPC endpoints, the `nodelogs` directory, and (on the
 //! node's host, Linux) the node process's TCP connections for the peer
-//! map.
+//! map; and, for the mining view, the node's stratum API.
 // Float math and std ln/sin are fine for drawing; the workspace bans them
 // for consensus code.
 #![allow(clippy::float_arithmetic, clippy::disallowed_methods)]
@@ -16,6 +16,7 @@ mod peers;
 mod raster;
 mod rpc;
 mod state;
+mod stratum;
 mod term;
 mod tui;
 mod web;
@@ -92,6 +93,10 @@ struct Cli {
     /// This node's position on the map, as LAT,LON.
     #[arg(long, global = true)]
     here: Option<String>,
+    /// The node's stratum API (`--node.stratum-api-addr`, default port
+    /// 3336), for the mining view: every miner and worker on this node.
+    #[arg(long, global = true, env = "QUAI_DASH_STRATUM_API")]
+    stratum_api: Option<String>,
     /// Seconds without a zone block before the dashboard raises a stall.
     #[arg(long, global = true, default_value_t = 60)]
     stall_secs: u64,
@@ -210,6 +215,10 @@ fn run() -> Result<(), String> {
             geo,
             here,
             stall_secs: cli.stall_secs,
+            stratum: match &cli.stratum_api {
+                Some(u) => Some(endpoint(u)?),
+                None => None,
+            },
         };
         let s = state.clone();
         std::thread::spawn(move || collect::run(cfg, s));
@@ -257,6 +266,8 @@ fn run() -> Result<(), String> {
                 (9.0, 'm', "m  peer map, full screen"),
                 (15.0, 'm', "m  back to the dashboard"),
                 (20.0, 't', "t  switch look: ANGEL"),
+                (24.5, 's', "s  stratum: miners and workers on this node"),
+                (28.5, 's', "s  back to the dashboard"),
                 (31.0, 'l', "l  node log, full height"),
                 (36.0, 'l', "l  back to the dashboard"),
                 (40.0, '?', "?  help"),
