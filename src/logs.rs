@@ -48,10 +48,19 @@ pub fn strip_ansi(s: &str) -> String {
 /// The level word near the start of a line (`WARNING` reads as `WARN`).
 pub fn level_of(line: &str) -> String {
     let head: String = line.chars().take(48).collect();
-    for (word, level) in
-        [("ERROR", "ERROR"), ("FATAL", "ERROR"), ("PANIC", "ERROR"), ("WARN", "WARN"), ("INFO", "INFO"), ("DEBUG", "DEBUG"), ("TRACE", "TRACE")]
-    {
-        if head.split(|c: char| !c.is_ascii_alphabetic()).any(|w| w == word || (word == "WARN" && w == "WARNING")) {
+    for (word, level) in [
+        ("ERROR", "ERROR"),
+        ("FATAL", "ERROR"),
+        ("PANIC", "ERROR"),
+        ("WARN", "WARN"),
+        ("INFO", "INFO"),
+        ("DEBUG", "DEBUG"),
+        ("TRACE", "TRACE"),
+    ] {
+        if head
+            .split(|c: char| !c.is_ascii_alphabetic())
+            .any(|w| w == word || (word == "WARN" && w == "WARNING"))
+        {
             return level.to_string();
         }
     }
@@ -122,10 +131,19 @@ mod tests {
     #[test]
     fn levels_and_colours() {
         let go = "\u{1b}[33mWARNING\u{1b}[0m[10-01|09:03:52.206] Devnet overrides active";
-        assert_eq!(strip_ansi(go), "WARNING[10-01|09:03:52.206] Devnet overrides active");
+        assert_eq!(
+            strip_ansi(go),
+            "WARNING[10-01|09:03:52.206] Devnet overrides active"
+        );
         assert_eq!(level_of(&strip_ansi(go)), "WARN");
-        assert_eq!(level_of("2026-10-01T17:23:03.275792Z  INFO rsq_node::node: network peers=72"), "INFO");
-        assert_eq!(level_of("2026-10-01T17:23:03Z ERROR rsq_chain: Append failed"), "ERROR");
+        assert_eq!(
+            level_of("2026-10-01T17:23:03.275792Z  INFO rsq_node::node: network peers=72"),
+            "INFO"
+        );
+        assert_eq!(
+            level_of("2026-10-01T17:23:03Z ERROR rsq_chain: Append failed"),
+            "ERROR"
+        );
         assert_eq!(level_of("plain text"), "");
     }
 }

@@ -265,7 +265,12 @@ pub struct LogLine {
 impl State {
     /// Records an event, keeping the newest [`EVENT_HISTORY`].
     pub fn push_event(&mut self, t_ms: u64, kind: &str, text: String, number: Option<u64>) {
-        self.events.push_back(Event { t_ms, kind: kind.to_string(), text, number });
+        self.events.push_back(Event {
+            t_ms,
+            kind: kind.to_string(),
+            text,
+            number,
+        });
         while self.events.len() > EVENT_HISTORY {
             self.events.pop_front();
         }
@@ -274,7 +279,11 @@ impl State {
     /// Appends a log line.
     pub fn push_log(&mut self, level: String, text: String) {
         self.log_seq += 1;
-        self.logs.push_back(LogLine { seq: self.log_seq, level, text });
+        self.logs.push_back(LogLine {
+            seq: self.log_seq,
+            level,
+            text,
+        });
         while self.logs.len() > LOG_HISTORY {
             self.logs.pop_front();
         }

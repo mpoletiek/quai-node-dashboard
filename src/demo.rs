@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::state::{
-    Algo, BLOCK_HISTORY, BlockInfo, Chains, Compare, Head, Mining, PendingShares, Peer, Peers, Place, State, now_ms,
+    Algo, BLOCK_HISTORY, BlockInfo, Chains, Compare, Head, Mining, Peer, Peers, PendingShares,
+    Place, State, now_ms,
 };
 
 const CITIES: &[(f64, f64, &str, &str)] = &[
@@ -56,7 +57,13 @@ impl Rng {
         (self.next() >> 11) as f64 / (1u64 << 53) as f64
     }
     fn hash(&mut self) -> String {
-        format!("0x{:016x}{:016x}{:016x}{:016x}", self.next(), self.next(), self.next(), self.next())
+        format!(
+            "0x{:016x}{:016x}{:016x}{:016x}",
+            self.next(),
+            self.next(),
+            self.next(),
+            self.next()
+        )
     }
 }
 
@@ -72,14 +79,23 @@ impl Demo {
     fn mine(&mut self, st: &mut State, t_ms: u64, quiet: bool) {
         self.zone += 1;
         let r = self.rng.f();
-        let order: u8 = if r < 0.12 { 0 } else if r < 0.45 { 1 } else { 2 };
+        let order: u8 = if r < 0.12 {
+            0
+        } else if r < 0.45 {
+            1
+        } else {
+            2
+        };
         if order <= 1 {
             self.region += 1;
         }
         if order == 0 {
             self.prime += 1;
         }
-        let parent = st.blocks.back().map_or_else(|| self.rng.hash(), |b| b.hash.clone());
+        let parent = st
+            .blocks
+            .back()
+            .map_or_else(|| self.rng.hash(), |b| b.hash.clone());
         let b = BlockInfo {
             number: self.zone,
             hash: self.rng.hash(),
@@ -91,7 +107,10 @@ impl Demo {
             workshares: (self.rng.f() * 14.0) as u32,
             gas_used: (self.rng.f().powi(2) * 18e6) as u64,
             gas_limit: 50_000_000,
-            base_fee: format!("{}", 26_000_000_000_000u64 + self.rng.next() % 2_000_000_000_000),
+            base_fee: format!(
+                "{}",
+                26_000_000_000_000u64 + self.rng.next() % 2_000_000_000_000
+            ),
             order,
             difficulty: format!("{}", 1_038_000_000_000u64 + self.rng.next() % 4_000_000_000),
             coinbase: format!("0x00{}", &self.rng.hash()[4..42]),
@@ -115,8 +134,18 @@ impl Demo {
                 ),
             );
             match order {
-                0 => st.push_event(t_ms, "prime", format!("Prime block {} (zone {})", self.prime, b.number), Some(b.number)),
-                1 => st.push_event(t_ms, "region", format!("Region block {} (zone {})", self.region, b.number), Some(b.number)),
+                0 => st.push_event(
+                    t_ms,
+                    "prime",
+                    format!("Prime block {} (zone {})", self.prime, b.number),
+                    Some(b.number),
+                ),
+                1 => st.push_event(
+                    t_ms,
+                    "region",
+                    format!("Region block {} (zone {})", self.region, b.number),
+                    Some(b.number),
+                ),
                 _ => {}
             }
             if self.rng.f() < 0.08 {
@@ -124,9 +153,21 @@ impl Demo {
             }
         }
         st.chains = Chains {
-            prime: Some(Head { number: self.prime, hash: String::new(), timestamp: b.timestamp }),
-            region: Some(Head { number: self.region, hash: String::new(), timestamp: b.timestamp }),
-            zone: Some(Head { number: b.number, hash: b.hash.clone(), timestamp: b.timestamp }),
+            prime: Some(Head {
+                number: self.prime,
+                hash: String::new(),
+                timestamp: b.timestamp,
+            }),
+            region: Some(Head {
+                number: self.region,
+                hash: String::new(),
+                timestamp: b.timestamp,
+            }),
+            zone: Some(Head {
+                number: b.number,
+                hash: b.hash.clone(),
+                timestamp: b.timestamp,
+            }),
         };
         st.blocks.push_back(b);
         while st.blocks.len() > BLOCK_HISTORY {
@@ -154,9 +195,21 @@ impl Demo {
         st.mining = Some(Mining {
             avg_block_time: wob(5.1, 0.05),
             blocks_analyzed: 178,
-            kawpow: Algo { hashrate: wob(2.43e11, 0.06), difficulty: "1038275705430".into(), share_time: wob(5.1, 0.05) },
-            sha: Algo { hashrate: wob(2.5e17, 0.08), difficulty: "220452383356020829".into(), share_time: wob(1.25, 0.1) },
-            scrypt: Algo { hashrate: wob(7.08e12, 0.08), difficulty: "14544668614928".into(), share_time: wob(1.3, 0.1) },
+            kawpow: Algo {
+                hashrate: wob(2.43e11, 0.06),
+                difficulty: "1038275705430".into(),
+                share_time: wob(5.1, 0.05),
+            },
+            sha: Algo {
+                hashrate: wob(2.5e17, 0.08),
+                difficulty: "220452383356020829".into(),
+                share_time: wob(1.25, 0.1),
+            },
+            scrypt: Algo {
+                hashrate: wob(7.08e12, 0.08),
+                difficulty: "14544668614928".into(),
+                share_time: wob(1.3, 0.1),
+            },
             base_block_reward: "70.4023".into(),
             estimated_block_reward: "105.3384".into(),
             workshare_reward: "11.7042".into(),
@@ -181,13 +234,22 @@ impl Demo {
 fn iso(ms: u64) -> String {
     let s = ms / 1000;
     let (h, m, sec) = ((s / 3600) % 24, (s / 60) % 60, s % 60);
-    format!("2026-10-01T{h:02}:{m:02}:{sec:02}.{:06}Z", (ms % 1000) * 1000)
+    format!(
+        "2026-10-01T{h:02}:{m:02}:{sec:02}.{:06}Z",
+        (ms % 1000) * 1000
+    )
 }
 
 /// Runs the invented node forever.
 pub fn run(state: Arc<Mutex<State>>) {
     let now = now_ms();
-    let mut d = Demo { rng: Rng(0x9E37_79B9_7F4A_7C15 ^ now), zone: 10_390_410, region: 5_579_751, prime: 2_297_891, next_block_ms: now + 2500 };
+    let mut d = Demo {
+        rng: Rng(0x9E37_79B9_7F4A_7C15 ^ now),
+        zone: 10_390_410,
+        region: 5_579_751,
+        prime: 2_297_891,
+        next_block_ms: now + 2500,
+    };
     if let Ok(mut st) = state.lock() {
         st.node.label = "DEMO NODE".into();
         st.node.rpc = "demo".into();
@@ -199,7 +261,14 @@ pub fn run(state: Arc<Mutex<State>>) {
             d.mine(&mut st, now - (40 - i) * 5000, true);
         }
         for i in 0..20 {
-            st.push_log("INFO".into(), format!("{}  INFO rsq_node::node: network peers={}", iso(now), 80 + i % 5));
+            st.push_log(
+                "INFO".into(),
+                format!(
+                    "{}  INFO rsq_node::node: network peers={}",
+                    iso(now),
+                    80 + i % 5
+                ),
+            );
         }
         let mut peers = Vec::new();
         for i in 0..64usize {
@@ -207,8 +276,17 @@ pub fn run(state: Arc<Mutex<State>>) {
             peers.push(Peer {
                 ip: format!("203.0.{}.{}", (i * 37) % 250, (i * 91) % 250),
                 port: 4002,
-                dir: if i % 7 == 0 { "out".into() } else { "in".into() },
-                place: Some(Place { lat: lat + (d.rng.f() - 0.5) * 3.0, lon: lon + (d.rng.f() - 0.5) * 3.0, city: city.into(), country: cc.into() }),
+                dir: if i % 7 == 0 {
+                    "out".into()
+                } else {
+                    "in".into()
+                },
+                place: Some(Place {
+                    lat: lat + (d.rng.f() - 0.5) * 3.0,
+                    lon: lon + (d.rng.f() - 0.5) * 3.0,
+                    city: city.into(),
+                    country: cc.into(),
+                }),
                 since_ms: now,
             });
         }
@@ -219,9 +297,19 @@ pub fn run(state: Arc<Mutex<State>>) {
             list: peers,
             geo: "db".into(),
             note: None,
-            here: Some(Place { lat: 39.1, lon: -94.6, city: String::new(), country: String::new() }),
+            here: Some(Place {
+                lat: 39.1,
+                lon: -94.6,
+                city: String::new(),
+                country: String::new(),
+            }),
         };
-        st.compare = Some(Compare { label: "GO-QUAI".into(), rpc: "demo".into(), online: true, ..Default::default() });
+        st.compare = Some(Compare {
+            label: "GO-QUAI".into(),
+            rpc: "demo".into(),
+            online: true,
+            ..Default::default()
+        });
     }
     loop {
         if let Ok(mut st) = state.lock() {

@@ -35,7 +35,13 @@ impl Endpoint {
             ),
             None => (authority.to_string(), 80),
         };
-        Ok(Endpoint { url: url.to_string(), host, port, path, timeout })
+        Ok(Endpoint {
+            url: url.to_string(),
+            host,
+            port,
+            path,
+            timeout,
+        })
     }
 
     /// The port.
@@ -50,7 +56,12 @@ impl Endpoint {
 
     /// The same host on another port.
     pub fn with_port(&self, port: u16) -> Endpoint {
-        Endpoint { url: format!("http://{}:{port}", self.host), port, path: "/".into(), ..self.clone() }
+        Endpoint {
+            url: format!("http://{}:{port}", self.host),
+            port,
+            path: "/".into(),
+            ..self.clone()
+        }
     }
 
     /// POSTs `body` and returns the response body of a 200.
@@ -61,8 +72,10 @@ impl Endpoint {
             .next()
             .ok_or_else(|| format!("{} does not resolve", self.host))?;
         let mut s = TcpStream::connect_timeout(&addr, self.timeout).map_err(|e| e.to_string())?;
-        s.set_read_timeout(Some(self.timeout)).map_err(|e| e.to_string())?;
-        s.set_write_timeout(Some(self.timeout)).map_err(|e| e.to_string())?;
+        s.set_read_timeout(Some(self.timeout))
+            .map_err(|e| e.to_string())?;
+        s.set_write_timeout(Some(self.timeout))
+            .map_err(|e| e.to_string())?;
         let req = format!(
             "POST {} HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             self.path,
@@ -125,10 +138,15 @@ impl Endpoint {
 
     /// Calls a JSON-RPC method and returns its `result`.
     pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
-        let body = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string();
+        let body =
+            json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string();
         let v: Value = serde_json::from_slice(&self.post(&body)?).map_err(|e| e.to_string())?;
         if let Some(err) = v.get("error") {
-            return Err(err.get("message").and_then(Value::as_str).unwrap_or("unknown error").to_string());
+            return Err(err
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+                .to_string());
         }
         Ok(v.get("result").cloned().unwrap_or(Value::Null))
     }
@@ -143,12 +161,16 @@ pub fn hex_u64(v: &Value) -> u64 {
 
 /// `0x`-prefixed hex quantity of any size → decimal string.
 pub fn hex_dec(v: &Value) -> String {
-    let Some(s) = v.as_str() else { return "0".into() };
+    let Some(s) = v.as_str() else {
+        return "0".into();
+    };
     let digits = s.trim_start_matches("0x");
     // Base-10 conversion over u32 limbs (big-endian hex input).
     let mut limbs: Vec<u32> = vec![0];
     for c in digits.chars() {
-        let Some(d) = c.to_digit(16) else { return "0".into() };
+        let Some(d) = c.to_digit(16) else {
+            return "0".into();
+        };
         let mut carry = u64::from(d);
         for l in limbs.iter_mut() {
             let x = u64::from(*l) * 16 + carry;
@@ -178,7 +200,11 @@ pub fn hex_dec(v: &Value) -> String {
 /// A wei amount (decimal string) as Quai with `decimals` fraction digits.
 pub fn wei_to_quai(dec: &str, decimals: usize) -> String {
     let s = dec.trim_start_matches('0');
-    let (int, frac) = if s.len() > 18 { (&s[..s.len() - 18], s[s.len() - 18..].to_string()) } else { ("0", format!("{s:0>18}")) };
+    let (int, frac) = if s.len() > 18 {
+        (&s[..s.len() - 18], s[s.len() - 18..].to_string())
+    } else {
+        ("0", format!("{s:0>18}"))
+    };
     let int = if int.is_empty() { "0" } else { int };
     if decimals == 0 {
         return int.to_string();
@@ -194,7 +220,10 @@ mod tests {
     fn hex_decimal() {
         assert_eq!(hex_dec(&json!("0x0")), "0");
         assert_eq!(hex_dec(&json!("0xff")), "255");
-        assert_eq!(hex_dec(&json!("0x3a25842919c3d855c49a31d")), "1124717808469535400940643101");
+        assert_eq!(
+            hex_dec(&json!("0x3a25842919c3d855c49a31d")),
+            "1124717808469535400940643101"
+        );
         assert_eq!(hex_u64(&json!("0x9e8b2e")), 10_390_318);
         assert_eq!(wei_to_quai("1500000000000000000", 2), "1.50");
         assert_eq!(wei_to_quai("25", 3), "0.000");

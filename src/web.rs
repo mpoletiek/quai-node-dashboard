@@ -30,7 +30,10 @@ pub fn serve(listen: &str, state: Arc<Mutex<State>>) -> Result<(), String> {
         let (body, ctype, status) = match path {
             "/" | "/index.html" => (INDEX_HTML.to_string(), "text/html; charset=utf-8", 200),
             "/api/state" => {
-                let json = state.lock().map(|s| serde_json::to_string(&*s).unwrap_or_default()).unwrap_or_default();
+                let json = state
+                    .lock()
+                    .map(|s| serde_json::to_string(&*s).unwrap_or_default())
+                    .unwrap_or_default();
                 (json, "application/json", 200)
             }
             _ => ("not found".to_string(), "text/plain", 404),

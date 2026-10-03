@@ -52,12 +52,21 @@ pub enum Graphics {
 }
 
 #[derive(Parser)]
-#[command(name = "quai-dash", version, about = "Live web and terminal monitor for Quai nodes (rs-quai or go-quai)")]
+#[command(
+    name = "quai-dash",
+    version,
+    about = "Live web and terminal monitor for Quai nodes (rs-quai or go-quai)"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
     /// Zone JSON-RPC endpoint.
-    #[arg(long, global = true, default_value = "http://127.0.0.1:9200", env = "QUAI_DASH_RPC")]
+    #[arg(
+        long,
+        global = true,
+        default_value = "http://127.0.0.1:9200",
+        env = "QUAI_DASH_RPC"
+    )]
     rpc: String,
     /// Region JSON-RPC endpoint (default: the zone host on port 9002).
     #[arg(long, global = true)]
@@ -148,14 +157,21 @@ fn run() -> Result<(), String> {
     };
     let compare = match &cli.compare {
         Some(c) => {
-            let (label, url) = c.split_once("=http").map_or(("COMPARE".to_string(), c.clone()), |(l, rest)| (l.to_string(), format!("http{rest}")));
+            let (label, url) = c
+                .split_once("=http")
+                .map_or(("COMPARE".to_string(), c.clone()), |(l, rest)| {
+                    (l.to_string(), format!("http{rest}"))
+                });
             Some((endpoint(&url)?, label))
         }
         None => None,
     };
     let geo = match (&cli.geoip_db, cli.geoip_online) {
         (Some(p), _) => peers::open_db(p)?,
-        (None, true) => Geo::Online(Endpoint::new("http://ip-api.com/batch", Duration::from_secs(6))?),
+        (None, true) => Geo::Online(Endpoint::new(
+            "http://ip-api.com/batch",
+            Duration::from_secs(6),
+        )?),
         (None, false) => Geo::Off,
     };
     let here = match &cli.here {
@@ -163,7 +179,12 @@ fn run() -> Result<(), String> {
             let (a, b) = s.split_once(',').ok_or("--here expects LAT,LON")?;
             let lat = a.trim().parse().map_err(|_| "--here: bad latitude")?;
             let lon = b.trim().parse().map_err(|_| "--here: bad longitude")?;
-            Some(Place { lat, lon, city: String::new(), country: String::new() })
+            Some(Place {
+                lat,
+                lon,
+                city: String::new(),
+                country: String::new(),
+            })
         }
         None => None,
     };
@@ -180,7 +201,16 @@ fn run() -> Result<(), String> {
         let s = state.clone();
         std::thread::spawn(move || demo::run(s));
     } else {
-        let cfg = collect::Config { label: cli.label.clone(), zone, region, prime, compare, geo, here, stall_secs: cli.stall_secs };
+        let cfg = collect::Config {
+            label: cli.label.clone(),
+            zone,
+            region,
+            prime,
+            compare,
+            geo,
+            here,
+            stall_secs: cli.stall_secs,
+        };
         let s = state.clone();
         std::thread::spawn(move || collect::run(cfg, s));
     }
@@ -189,18 +219,38 @@ fn run() -> Result<(), String> {
             eprintln!("quai-dash: watching {} — open http://{listen}/", cli.rpc);
             web::serve(&listen, state)
         }
-        Cmd::Tui { theme, graphics, notify } => {
+        Cmd::Tui {
+            theme,
+            graphics,
+            notify,
+        } => {
             let kind = term::detect();
             let graphics = match graphics {
                 Graphics::Auto => kind.graphics(),
                 Graphics::On => true,
                 Graphics::Off => false,
             };
-            tui::run(state, theme, tui::Options { graphics, kind, notify })
+            tui::run(
+                state,
+                theme,
+                tui::Options {
+                    graphics,
+                    kind,
+                    notify,
+                },
+            )
         }
-        Cmd::Record { out, size, fps, seconds } => {
+        Cmd::Record {
+            out,
+            size,
+            fps,
+            seconds,
+        } => {
             let (w, h) = size.split_once('x').ok_or("--size expects COLSxROWS")?;
-            let dims = (w.parse().map_err(|_| "bad width")?, h.parse().map_err(|_| "bad height")?);
+            let dims = (
+                w.parse().map_err(|_| "bad width")?,
+                h.parse().map_err(|_| "bad height")?,
+            );
             // Let the demo node fill in, then tour both looks and the views.
             std::thread::sleep(Duration::from_millis(300));
             let script = [
@@ -214,7 +264,8 @@ fn run() -> Result<(), String> {
                 (44.5, 't', "t  switch look: GHOST"),
             ];
             let json = tui::record(&state, Theme::Ghost, dims, fps, seconds, &script)?;
-            std::fs::write(&out, json.to_string()).map_err(|e| format!("{}: {e}", out.display()))?;
+            std::fs::write(&out, json.to_string())
+                .map_err(|e| format!("{}: {e}", out.display()))?;
             eprintln!("quai-dash: wrote {}", out.display());
             Ok(())
         }

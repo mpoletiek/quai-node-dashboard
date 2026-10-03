@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 use crate::peers::{self, Geo};
 use crate::rpc::{Endpoint, hex_dec, hex_u64, wei_to_quai};
 use crate::state::{
-    Algo, BLOCK_HISTORY, BlockInfo, Compare, Head, Mining, PendingShares, Peer, Place, State, location_name, now_ms,
+    Algo, BLOCK_HISTORY, BlockInfo, Compare, Head, Mining, Peer, PendingShares, Place, State,
+    location_name, now_ms,
 };
 
 /// What to watch.
@@ -42,7 +43,11 @@ fn block_info(b: &Value) -> Option<BlockInfo> {
     let num_at = |i: usize| nums.and_then(|n| n.get(i)).map(hex_u64).unwrap_or(0);
     Some(BlockInfo {
         number: hex_u64(&wo["number"]),
-        hash: b["hash"].as_str().or_else(|| wo["hash"].as_str()).unwrap_or("").to_string(),
+        hash: b["hash"]
+            .as_str()
+            .or_else(|| wo["hash"].as_str())
+            .unwrap_or("")
+            .to_string(),
         parent: wo["parentHash"].as_str().unwrap_or("").to_string(),
         timestamp: hex_u64(&wo["timestamp"]),
         seen_ms: now_ms(),
@@ -55,7 +60,9 @@ fn block_info(b: &Value) -> Option<BlockInfo> {
         order: b["order"].as_u64().unwrap_or(2) as u8,
         difficulty: hex_dec(&wo["difficulty"]),
         coinbase: wo["primaryCoinbase"].as_str().unwrap_or("").to_string(),
-        auxpow: wo["nonce"].as_str().is_some_and(|n| n.trim_start_matches("0x").chars().all(|c| c == '0')),
+        auxpow: wo["nonce"]
+            .as_str()
+            .is_some_and(|n| n.trim_start_matches("0x").chars().all(|c| c == '0')),
         prime_number: num_at(0),
         region_number: num_at(1),
         exchange_rate: hex_dec(&h["exchangeRate"]),
@@ -66,9 +73,14 @@ fn block_info(b: &Value) -> Option<BlockInfo> {
 /// The latest block of a prime (`ctx` 0) or region (1) endpoint, numbered
 /// in its own chain.
 fn head(ep: &Endpoint, ctx: usize) -> Option<Head> {
-    let b = ep.call("quai_getBlockByNumber", json!(["latest", false])).ok()?;
+    let b = ep
+        .call("quai_getBlockByNumber", json!(["latest", false]))
+        .ok()?;
     let wo = b.get("woHeader")?;
-    let own = b["header"]["number"].as_array().and_then(|n| n.get(ctx)).map(hex_u64);
+    let own = b["header"]["number"]
+        .as_array()
+        .and_then(|n| n.get(ctx))
+        .map(hex_u64);
     Some(Head {
         number: own.unwrap_or_else(|| hex_u64(&wo["number"])),
         hash: b["hash"].as_str().unwrap_or("").to_string(),
@@ -81,16 +93,30 @@ fn algo(m: &Value, rate: &str, diff: &str, time: &str) -> Algo {
         Value::String(s) => s.parse().unwrap_or(0.0),
         v => v.as_f64().unwrap_or(0.0),
     };
-    Algo { hashrate, difficulty: hex_dec(&m[diff]), share_time: m[time].as_f64().unwrap_or(0.0) }
+    Algo {
+        hashrate,
+        difficulty: hex_dec(&m[diff]),
+        share_time: m[time].as_f64().unwrap_or(0.0),
+    }
 }
 
 fn mining(m: &Value) -> Mining {
     Mining {
         avg_block_time: m["avgBlockTime"].as_f64().unwrap_or(0.0),
         blocks_analyzed: m["blocksAnalyzed"].as_u64().unwrap_or(0),
-        kawpow: algo(m, "kawpowHashRate", "kawpowDifficulty", "avgKawpowShareTime"),
+        kawpow: algo(
+            m,
+            "kawpowHashRate",
+            "kawpowDifficulty",
+            "avgKawpowShareTime",
+        ),
         sha: algo(m, "shaHashRate", "shaDifficulty", "avgShaShareTime"),
-        scrypt: algo(m, "scryptHashRate", "scryptDifficulty", "avgScryptShareTime"),
+        scrypt: algo(
+            m,
+            "scryptHashRate",
+            "scryptDifficulty",
+            "avgScryptShareTime",
+        ),
         base_block_reward: wei_to_quai(&hex_dec(&m["baseBlockReward"]), 4),
         estimated_block_reward: wei_to_quai(&hex_dec(&m["estimatedBlockReward"]), 4),
         workshare_reward: wei_to_quai(&hex_dec(&m["workshareReward"]), 4),
@@ -150,13 +176,20 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
                         st.push_event(now, "online", "Node RPC is back".into(), None);
                     }
                 }
-                let from = if last_zone == 0 { n.saturating_sub(24) } else { last_zone + 1 };
+                let from = if last_zone == 0 {
+                    n.saturating_sub(24)
+                } else {
+                    last_zone + 1
+                };
                 let mut fetched = Vec::new();
                 for k in from.max(n.saturating_sub(24))..=n {
                     if k <= last_zone && last_zone != 0 {
                         continue;
                     }
-                    if let Ok(b) = cfg.zone.call("quai_getBlockByNumber", json!([format!("0x{k:x}"), false])) {
+                    if let Ok(b) = cfg
+                        .zone
+                        .call("quai_getBlockByNumber", json!([format!("0x{k:x}"), false]))
+                    {
                         if let Some(bi) = block_info(&b) {
                             fetched.push(bi);
                         }
@@ -171,16 +204,34 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
                         let reorg = st
                             .blocks
                             .back()
-                            .filter(|prev| bi.number == prev.number + 1 && bi.parent != prev.hash && !first_fill)
+                            .filter(|prev| {
+                                bi.number == prev.number + 1
+                                    && bi.parent != prev.hash
+                                    && !first_fill
+                            })
                             .map(|prev| prev.number);
                         if let Some(at) = reorg {
-                            st.push_event(now, "reorg", format!("Reorg at zone block {at}"), Some(at));
+                            st.push_event(
+                                now,
+                                "reorg",
+                                format!("Reorg at zone block {at}"),
+                                Some(at),
+                            );
                         }
                         if !first_fill && bi.order < 2 {
                             let (kind, text) = if bi.order == 0 {
-                                ("prime", format!("Prime block {} (zone {})", bi.prime_number, bi.number))
+                                (
+                                    "prime",
+                                    format!("Prime block {} (zone {})", bi.prime_number, bi.number),
+                                )
                             } else {
-                                ("region", format!("Region block {} (zone {})", bi.region_number, bi.number))
+                                (
+                                    "region",
+                                    format!(
+                                        "Region block {} (zone {})",
+                                        bi.region_number, bi.number
+                                    ),
+                                )
                             };
                             st.push_event(now, kind, text, Some(bi.number));
                         }
@@ -202,7 +253,11 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
                         st.push_event(now, "stall", text, Some(n));
                     }
                     if let Some(b) = st.blocks.back() {
-                        st.chains.zone = Some(Head { number: b.number, hash: b.hash.clone(), timestamp: b.timestamp });
+                        st.chains.zone = Some(Head {
+                            number: b.number,
+                            hash: b.hash.clone(),
+                            timestamp: b.timestamp,
+                        });
                     }
                 }
                 last_zone = last_zone.max(n);
@@ -227,12 +282,35 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
             }
         }
         if online && tick % 5 == 0 {
-            let m = cfg.zone.call("quai_getMiningInfo", json!([])).ok().map(|m| mining(&m));
-            let p = cfg.zone.call("quai_getPendingWorkShares", json!([])).ok().map(|v| pending(&v));
-            let count = cfg.zone.call("net_peerCount", json!([])).ok().map(|v| hex_u64(&v) as u32);
+            let m = cfg
+                .zone
+                .call("quai_getMiningInfo", json!([]))
+                .ok()
+                .map(|m| mining(&m));
+            let p = cfg
+                .zone
+                .call("quai_getPendingWorkShares", json!([]))
+                .ok()
+                .map(|v| pending(&v));
+            let count = cfg
+                .zone
+                .call("net_peerCount", json!([]))
+                .ok()
+                .map(|v| hex_u64(&v) as u32);
             let dir = cfg.zone.call("net_peerCountByDirection", json!([])).ok();
-            let loc = if tick == 0 { cfg.zone.call("quai_nodeLocation", json!([])).ok() } else { None };
-            let chain_id = if tick == 0 { cfg.zone.call("quai_chainId", json!([])).ok().map(|v| hex_u64(&v)) } else { None };
+            let loc = if tick == 0 {
+                cfg.zone.call("quai_nodeLocation", json!([])).ok()
+            } else {
+                None
+            };
+            let chain_id = if tick == 0 {
+                cfg.zone
+                    .call("quai_chainId", json!([]))
+                    .ok()
+                    .map(|v| hex_u64(&v))
+            } else {
+                None
+            };
             if let Ok(mut st) = state.lock() {
                 if m.is_some() {
                     st.mining = m;
@@ -280,13 +358,21 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
                     Err(e) => (Vec::new(), Some(e)),
                 }
             } else {
-                (Vec::new(), Some("peer map needs quai-dash on the node's host (RPC is remote)".into()))
+                (
+                    Vec::new(),
+                    Some("peer map needs quai-dash on the node's host (RPC is remote)".into()),
+                )
             };
             if let Ok(mut st) = state.lock() {
                 let before = st.peers.list.len();
                 let after = list.len();
                 if tick > 0 && after > before + 2 {
-                    st.push_event(now, "peer", format!("{} new peers ({after} connected)", after - before), None);
+                    st.push_event(
+                        now,
+                        "peer",
+                        format!("{} new peers ({after} connected)", after - before),
+                        None,
+                    );
                 }
                 st.peers.list = list;
                 st.peers.note = note;
@@ -294,20 +380,34 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
         }
         // Comparison node: same hash at the same height?
         if let Some((ep, label)) = &cfg.compare {
-            let mut cmp = Compare { label: label.clone(), rpc: ep.url.clone(), ..Default::default() };
+            let mut cmp = Compare {
+                label: label.clone(),
+                rpc: ep.url.clone(),
+                ..Default::default()
+            };
             if let Ok(v) = ep.call("quai_blockNumber", json!([])) {
                 cmp.online = true;
                 cmp.height = hex_u64(&v);
-                let ours: Vec<(u64, String)> =
-                    state.lock().map(|s| s.blocks.iter().map(|b| (b.number, b.hash.clone())).collect()).unwrap_or_default();
+                let ours: Vec<(u64, String)> = state
+                    .lock()
+                    .map(|s| {
+                        s.blocks
+                            .iter()
+                            .map(|b| (b.number, b.hash.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 // Check the newest of our blocks it also has and we haven't compared.
                 for (n, h) in ours.iter().rev().filter(|(n, _)| *n <= cmp.height).take(3) {
                     if cmp_hashes.iter().any(|(m, _)| m == n) {
                         continue;
                     }
-                    if let Ok(b) = ep.call("quai_getBlockByNumber", json!([format!("0x{n:x}"), false])) {
+                    if let Ok(b) =
+                        ep.call("quai_getBlockByNumber", json!([format!("0x{n:x}"), false]))
+                    {
                         let theirs = b["hash"].as_str().unwrap_or("").to_string();
-                        cmp_hashes.push_back((*n, if theirs == *h { String::new() } else { theirs }));
+                        cmp_hashes
+                            .push_back((*n, if theirs == *h { String::new() } else { theirs }));
                     }
                 }
                 while cmp_hashes.len() > 64 {
@@ -316,12 +416,20 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
             }
             cmp.compared = cmp_hashes.len() as u32;
             cmp.matched = cmp_hashes.iter().filter(|(_, d)| d.is_empty()).count() as u32;
-            cmp.last_mismatch = cmp_hashes.iter().rev().find(|(_, d)| !d.is_empty()).map(|(n, _)| *n);
+            cmp.last_mismatch = cmp_hashes
+                .iter()
+                .rev()
+                .find(|(_, d)| !d.is_empty())
+                .map(|(n, _)| *n);
             if let Ok(mut st) = state.lock() {
                 let new_mismatch = cmp.last_mismatch.is_some()
                     && st.compare.as_ref().and_then(|c| c.last_mismatch) != cmp.last_mismatch;
                 if new_mismatch {
-                    let text = format!("Block {} differs from {}", cmp.last_mismatch.unwrap_or(0), cmp.label);
+                    let text = format!(
+                        "Block {} differs from {}",
+                        cmp.last_mismatch.unwrap_or(0),
+                        cmp.label
+                    );
                     st.push_event(now, "mismatch", text, cmp.last_mismatch);
                 }
                 st.compare = Some(cmp);

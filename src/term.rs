@@ -23,7 +23,10 @@ pub fn detect() -> Kind {
     let prog = var("TERM_PROGRAM").to_ascii_lowercase();
     if var("TERM").contains("kitty") || !var("KITTY_WINDOW_ID").is_empty() {
         Kind::Kitty
-    } else if prog == "ghostty" || !var("GHOSTTY_RESOURCES_DIR").is_empty() || var("TERM").contains("ghostty") {
+    } else if prog == "ghostty"
+        || !var("GHOSTTY_RESOURCES_DIR").is_empty()
+        || var("TERM").contains("ghostty")
+    {
         Kind::Ghostty
     } else if prog == "wezterm" {
         Kind::WezTerm
@@ -42,9 +45,10 @@ impl Kind {
 /// Pixel size of one cell, from the terminal (`(9, 18)` if it won't say).
 pub fn cell_px() -> (u32, u32) {
     match crossterm::terminal::window_size() {
-        Ok(ws) if ws.width > 0 && ws.height > 0 && ws.columns > 0 && ws.rows > 0 => {
-            (u32::from(ws.width) / u32::from(ws.columns), u32::from(ws.height) / u32::from(ws.rows))
-        }
+        Ok(ws) if ws.width > 0 && ws.height > 0 && ws.columns > 0 && ws.rows > 0 => (
+            u32::from(ws.width) / u32::from(ws.columns),
+            u32::from(ws.height) / u32::from(ws.rows),
+        ),
         _ => (9, 18),
     }
 }
@@ -54,7 +58,13 @@ pub const MAP_IMAGE: u32 = 7_701;
 
 /// Places a PNG over `cols`×`rows` cells at (`col`, `row`), replacing any
 /// earlier image with the same id. The cursor is saved and restored.
-pub fn place_png(out: &mut impl Write, id: u32, png: &[u8], (col, row): (u16, u16), (cols, rows): (u16, u16)) -> std::io::Result<()> {
+pub fn place_png(
+    out: &mut impl Write,
+    id: u32,
+    png: &[u8],
+    (col, row): (u16, u16),
+    (cols, rows): (u16, u16),
+) -> std::io::Result<()> {
     use base64_engine::encode;
     let data = encode(png);
     write!(out, "\x1b7\x1b[{};{}H", row + 1, col + 1)?;
@@ -63,7 +73,10 @@ pub fn place_png(out: &mut impl Write, id: u32, png: &[u8], (col, row): (u16, u1
         let more = u8::from(i + 1 < chunks.len());
         let body = std::str::from_utf8(c).unwrap_or("");
         if i == 0 {
-            write!(out, "\x1b_Ga=T,f=100,i={id},p=1,q=2,C=1,z=1,c={cols},r={rows},m={more};{body}\x1b\\")?;
+            write!(
+                out,
+                "\x1b_Ga=T,f=100,i={id},p=1,q=2,C=1,z=1,c={cols},r={rows},m={more};{body}\x1b\\"
+            )?;
         } else {
             write!(out, "\x1b_Gm={more};{body}\x1b\\")?;
         }
@@ -88,7 +101,12 @@ pub fn title(out: &mut impl Write, text: &str) -> std::io::Result<()> {
 pub fn notify(out: &mut impl Write, kind: Kind, title: &str, body: &str) -> std::io::Result<()> {
     let clean = |s: &str| s.replace(['\x07', '\x1b', ';'], " ");
     match kind {
-        Kind::Kitty => write!(out, "\x1b]99;i=1:d=0;{}\x1b\\\x1b]99;i=1:d=1:p=body;{}\x1b\\", clean(title), clean(body))?,
+        Kind::Kitty => write!(
+            out,
+            "\x1b]99;i=1:d=0;{}\x1b\\\x1b]99;i=1:d=1:p=body;{}\x1b\\",
+            clean(title),
+            clean(body)
+        )?,
         _ => write!(out, "\x1b]9;{}: {}\x07", clean(title), clean(body))?,
     }
     out.flush()
@@ -101,11 +119,21 @@ mod base64_engine {
     pub fn encode(b: &[u8]) -> String {
         let mut s = String::with_capacity(b.len().div_ceil(3) * 4);
         for c in b.chunks(3) {
-            let n = (u32::from(c[0]) << 16) | (u32::from(*c.get(1).unwrap_or(&0)) << 8) | u32::from(*c.get(2).unwrap_or(&0));
+            let n = (u32::from(c[0]) << 16)
+                | (u32::from(*c.get(1).unwrap_or(&0)) << 8)
+                | u32::from(*c.get(2).unwrap_or(&0));
             s.push(char::from(T[(n >> 18) as usize & 63]));
             s.push(char::from(T[(n >> 12) as usize & 63]));
-            s.push(if c.len() > 1 { char::from(T[(n >> 6) as usize & 63]) } else { '=' });
-            s.push(if c.len() > 2 { char::from(T[n as usize & 63]) } else { '=' });
+            s.push(if c.len() > 1 {
+                char::from(T[(n >> 6) as usize & 63])
+            } else {
+                '='
+            });
+            s.push(if c.len() > 2 {
+                char::from(T[n as usize & 63])
+            } else {
+                '='
+            });
         }
         s
     }

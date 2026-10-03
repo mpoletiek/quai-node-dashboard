@@ -138,14 +138,21 @@ impl App {
         }
         for e in s.events.iter().filter(|e| e.t_ms > self.last_event_ms) {
             if e.kind == "prime" || e.kind == "region" {
-                self.flash = Some(Flash { until: self.tick + FLASH_TICKS, prime: e.kind == "prime", text: e.text.clone() });
+                self.flash = Some(Flash {
+                    until: self.tick + FLASH_TICKS,
+                    prime: e.kind == "prime",
+                    text: e.text.clone(),
+                });
             }
         }
         if let Some(e) = s.events.back() {
             self.last_event_ms = self.last_event_ms.max(e.t_ms);
         }
         if let Some(m) = &s.mining {
-            let key = format!("{}/{}/{}", m.kawpow.hashrate, m.sha.hashrate, m.scrypt.hashrate);
+            let key = format!(
+                "{}/{}/{}",
+                m.kawpow.hashrate, m.sha.hashrate, m.scrypt.hashrate
+            );
             if key != self.hist_key {
                 self.hist_key = key;
                 for (h, a) in self.hist.iter_mut().zip([&m.kawpow, &m.sha, &m.scrypt]) {
@@ -169,10 +176,26 @@ impl App {
                 }
             }
             KeyCode::Char('t') => {
-                self.theme = if self.theme == Theme::Ghost { Theme::Angel } else { Theme::Ghost };
+                self.theme = if self.theme == Theme::Ghost {
+                    Theme::Angel
+                } else {
+                    Theme::Ghost
+                };
             }
-            KeyCode::Char('l') => self.view = if self.view == View::Logs { View::Dash } else { View::Logs },
-            KeyCode::Char('m') => self.view = if self.view == View::Map { View::Dash } else { View::Map },
+            KeyCode::Char('l') => {
+                self.view = if self.view == View::Logs {
+                    View::Dash
+                } else {
+                    View::Logs
+                }
+            }
+            KeyCode::Char('m') => {
+                self.view = if self.view == View::Map {
+                    View::Dash
+                } else {
+                    View::Map
+                }
+            }
             KeyCode::Char('?') | KeyCode::Char('h') => self.help = !self.help,
             _ => {}
         }
@@ -180,7 +203,8 @@ impl App {
     }
 
     fn rand(&self, salt: u64) -> u64 {
-        let mut x = self.tick.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ salt.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let mut x = self.tick.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ salt.wrapping_mul(0xBF58_476D_1CE4_E5B9);
         x ^= x >> 31;
         x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
         x ^ (x >> 29)
@@ -189,7 +213,11 @@ impl App {
 
 /// Hashrate as a sparkline value (three significant digits of its decade).
 fn scale_rate(h: f64) -> u64 {
-    if h <= 0.0 { 0 } else { (h.log10() * 100.0).max(0.0) as u64 }
+    if h <= 0.0 {
+        0
+    } else {
+        (h.log10() * 100.0).max(0.0) as u64
+    }
 }
 
 /// Runs until the user quits.
@@ -214,7 +242,9 @@ impl PixelMap {
     fn update(&mut self, app: &App, s: &State) {
         use crate::raster::{MapColors, Pin, flat, globe};
         let mut out = std::io::stdout();
-        let overlay = app.help || app.tick < BOOT_TICKS || app.flash.as_ref().is_some_and(|fl| app.tick < fl.until);
+        let overlay = app.help
+            || app.tick < BOOT_TICKS
+            || app.flash.as_ref().is_some_and(|fl| app.tick < fl.until);
         let Some(rect) = app.map_rect.get().filter(|_| !overlay) else {
             if self.placed {
                 let _ = crate::term::delete_image(&mut out, crate::term::MAP_IMAGE);
@@ -237,38 +267,78 @@ impl PixelMap {
             _ => [128, 128, 128],
         };
         let p = pal(app.theme);
-        let colors = MapColors { bg: rgb(p.bg), acc: rgb(p.fg), warn: rgb(p.warn), hot: rgb(p.alert) };
+        let colors = MapColors {
+            bg: rgb(p.bg),
+            acc: rgb(p.fg),
+            warn: rgb(p.warn),
+            hot: rgb(p.alert),
+        };
         let pins: Vec<Pin> = s
             .peers
             .list
             .iter()
-            .filter_map(|q| q.place.clone().map(|place| Pin { place, out: q.dir == "out" }))
+            .filter_map(|q| {
+                q.place.clone().map(|place| Pin {
+                    place,
+                    out: q.dir == "out",
+                })
+            })
             .collect();
         let t = app.tick as f64 * FRAME.as_secs_f64();
         let img = match app.theme {
-            Theme::Ghost => globe(w, h, &colors, &pins, s.peers.here.as_ref(), -40.0 + t * 2.4, t),
+            Theme::Ghost => globe(
+                w,
+                h,
+                &colors,
+                &pins,
+                s.peers.here.as_ref(),
+                -40.0 + t * 2.4,
+                t,
+            ),
             Theme::Angel => flat(w, h, &colors, &pins, s.peers.here.as_ref(), t),
         };
-        if crate::term::place_png(&mut out, crate::term::MAP_IMAGE, &img.png(), (rect.x, rect.y), (rect.width, rect.height)).is_ok() {
+        if crate::term::place_png(
+            &mut out,
+            crate::term::MAP_IMAGE,
+            &img.png(),
+            (rect.x, rect.y),
+            (rect.width, rect.height),
+        )
+        .is_ok()
+        {
             self.placed = true;
             self.last = Some((rect, app.theme));
         }
     }
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, state: &Arc<Mutex<State>>, theme: Theme, opts: &Options) -> Result<(), String> {
+fn event_loop(
+    terminal: &mut ratatui::DefaultTerminal,
+    state: &Arc<Mutex<State>>,
+    theme: Theme,
+    opts: &Options,
+) -> Result<(), String> {
     use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
     let mut app = App::new(theme);
     app.gfx = opts.graphics;
-    let mut pixmap = PixelMap { cell: crate::term::cell_px(), placed: false, last: None };
+    let mut pixmap = PixelMap {
+        cell: crate::term::cell_px(),
+        placed: false,
+        last: None,
+    };
     let mut titled = 0u64;
     let mut alerted = now_ms();
     loop {
-        let snap = state.lock().map(|s| s.clone()).map_err(|_| "state lock poisoned".to_string())?;
+        let snap = state
+            .lock()
+            .map(|s| s.clone())
+            .map_err(|_| "state lock poisoned".to_string())?;
         app.observe(&snap);
         let mut out = std::io::stdout();
         let _ = crossterm::execute!(out, BeginSynchronizedUpdate);
-        terminal.draw(|f| draw(f, &app, &snap)).map_err(|e| e.to_string())?;
+        terminal
+            .draw(|f| draw(f, &app, &snap))
+            .map_err(|e| e.to_string())?;
         if app.gfx {
             pixmap.update(&app, &snap);
         }
@@ -277,13 +347,21 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, state: &Arc<Mutex<State>>
         let zone = snap.chains.zone.as_ref().map_or(0, |z| z.number);
         if zone != titled {
             titled = zone;
-            let _ = crate::term::title(&mut out, &format!("◆ {} · {} · quai-dash", thousands(zone), snap.node.location));
+            let _ = crate::term::title(
+                &mut out,
+                &format!("◆ {} · {} · quai-dash", thousands(zone), snap.node.location),
+            );
         }
         // Desktop notifications for alerts.
         if opts.notify {
             for e in snap.events.iter().filter(|e| e.t_ms > alerted) {
                 if matches!(e.kind.as_str(), "stall" | "offline" | "mismatch" | "reorg") {
-                    let _ = crate::term::notify(&mut out, opts.kind, &format!("quai-dash · {}", snap.node.label), &e.text);
+                    let _ = crate::term::notify(
+                        &mut out,
+                        opts.kind,
+                        &format!("quai-dash · {}", snap.node.label),
+                        &e.text,
+                    );
                 }
             }
             if let Some(e) = snap.events.back() {
@@ -368,16 +446,23 @@ pub fn record(
             captions.push(serde_json::json!([frames.len(), key.to_string(), caption]));
             next_key += 1;
         }
-        let snap = state.lock().map(|s| s.clone()).map_err(|_| "state lock poisoned".to_string())?;
+        let snap = state
+            .lock()
+            .map(|s| s.clone())
+            .map_err(|_| "state lock poisoned".to_string())?;
         app.observe(&snap);
-        term.draw(|f| draw(f, &app, &snap)).map_err(|e| e.to_string())?;
+        term.draw(|f| draw(f, &app, &snap))
+            .map_err(|e| e.to_string())?;
         if t % every.max(1) == 0 {
             let buf = term.backend().buffer().clone();
             let mut runs: Vec<serde_json::Value> = Vec::new();
             for y in 0..h {
                 let mut x = 0u16;
                 while x < w {
-                    let changed = |xx: u16| prev.as_ref().is_none_or(|p| p.cell((xx, y)) != buf.cell((xx, y)));
+                    let changed = |xx: u16| {
+                        prev.as_ref()
+                            .is_none_or(|p| p.cell((xx, y)) != buf.cell((xx, y)))
+                    };
                     if !changed(x) {
                         x += 1;
                         continue;
@@ -386,12 +471,26 @@ pub fn record(
                     let st = c0.style();
                     let mut flags = 0u8;
                     let m = st.add_modifier;
-                    if m.contains(Modifier::BOLD) { flags |= 1; }
-                    if m.contains(Modifier::DIM) { flags |= 2; }
-                    if m.contains(Modifier::ITALIC) { flags |= 4; }
-                    if m.contains(Modifier::REVERSED) { flags |= 8; }
-                    if m.contains(Modifier::UNDERLINED) { flags |= 16; }
-                    let key = format!("{}|{}|{flags}", hex_color(st.fg.unwrap_or(Color::Reset), "#d0d0d0"), hex_color(st.bg.unwrap_or(Color::Reset), "#000000"));
+                    if m.contains(Modifier::BOLD) {
+                        flags |= 1;
+                    }
+                    if m.contains(Modifier::DIM) {
+                        flags |= 2;
+                    }
+                    if m.contains(Modifier::ITALIC) {
+                        flags |= 4;
+                    }
+                    if m.contains(Modifier::REVERSED) {
+                        flags |= 8;
+                    }
+                    if m.contains(Modifier::UNDERLINED) {
+                        flags |= 16;
+                    }
+                    let key = format!(
+                        "{}|{}|{flags}",
+                        hex_color(st.fg.unwrap_or(Color::Reset), "#d0d0d0"),
+                        hex_color(st.bg.unwrap_or(Color::Reset), "#000000")
+                    );
                     let ix = *style_ix.entry(key.clone()).or_insert_with(|| {
                         styles.push(key);
                         styles.len() - 1
@@ -406,7 +505,11 @@ pub fn record(
                         let sym = c.symbol();
                         let sym = if sym.is_empty() { " " } else { sym };
                         text.push_str(sym);
-                        x += if sym.chars().next().is_some_and(wide) { 2 } else { 1 };
+                        x += if sym.chars().next().is_some_and(wide) {
+                            2
+                        } else {
+                            1
+                        };
                     }
                     if x == x0 {
                         x += 1;
@@ -432,7 +535,9 @@ pub fn record(
         })
         .collect();
     let ms = FRAME.as_millis() as u64 * every.max(1);
-    Ok(serde_json::json!({"w": w, "h": h, "frame_ms": ms, "styles": styles, "frames": frames, "captions": captions}))
+    Ok(
+        serde_json::json!({"w": w, "h": h, "frame_ms": ms, "styles": styles, "frames": frames, "captions": captions}),
+    )
 }
 
 // ---------------------------------------------------------------- format
@@ -487,7 +592,11 @@ fn e18(dec: &str) -> String {
 }
 
 fn short_hash(h: &str) -> String {
-    if h.len() > 14 { format!("{}…{}", &h[..8], &h[h.len() - 4..]) } else { h.to_string() }
+    if h.len() > 14 {
+        format!("{}…{}", &h[..8], &h[h.len() - 4..])
+    } else {
+        h.to_string()
+    }
 }
 
 fn utc_clock(ms: u64) -> String {
@@ -551,7 +660,13 @@ fn seg_rows(s: &str) -> [String; 5] {
         if let Some(d) = c.to_digit(10) {
             let g = SEG[d as usize];
             let h = |on: bool| if on { " ━━ " } else { "    " };
-            let v = |l: bool, r: bool| format!("{}  {}", if l { "┃" } else { " " }, if r { "┃" } else { " " });
+            let v = |l: bool, r: bool| {
+                format!(
+                    "{}  {}",
+                    if l { "┃" } else { " " },
+                    if r { "┃" } else { " " }
+                )
+            };
             rows[0].push_str(h(g[0]));
             rows[1].push_str(&v(g[5], g[1]));
             rows[2].push_str(h(g[6]));
@@ -587,7 +702,10 @@ fn panel(f: &mut Frame, area: Rect, app: &App, title: &str, jp: &str) -> Rect {
             .border_style(Style::new().fg(p.faint))
             .title(Line::from(vec![
                 Span::styled(" ▸ ", Style::new().fg(p.fg)),
-                Span::styled(title.to_string(), Style::new().fg(p.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    title.to_string(),
+                    Style::new().fg(p.fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(format!(" {jp} "), Style::new().fg(p.dim)),
             ])),
         Theme::Angel => Block::default()
@@ -595,7 +713,13 @@ fn panel(f: &mut Frame, area: Rect, app: &App, title: &str, jp: &str) -> Rect {
             .border_type(BorderType::Thick)
             .border_style(Style::new().fg(p.dim))
             .title(Line::from(vec![
-                Span::styled(format!(" {title} "), Style::new().fg(Color::Black).bg(p.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" {title} "),
+                    Style::new()
+                        .fg(Color::Black)
+                        .bg(p.fg)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(format!(" {jp} "), Style::new().fg(p.warn)),
             ])),
     };
@@ -603,7 +727,12 @@ fn panel(f: &mut Frame, area: Rect, app: &App, title: &str, jp: &str) -> Rect {
     f.render_widget(block, area);
     if app.theme == Theme::Ghost && area.width > 4 && area.height > 2 {
         // Bright corner ticks over the faint frame.
-        let (l, r, t, b) = (area.x, area.x + area.width - 1, area.y, area.y + area.height - 1);
+        let (l, r, t, b) = (
+            area.x,
+            area.x + area.width - 1,
+            area.y,
+            area.y + area.height - 1,
+        );
         let buf = f.buffer_mut();
         for (x, y, sym) in [
             (l, t, "┌"),
@@ -625,7 +754,10 @@ fn panel(f: &mut Frame, area: Rect, app: &App, title: &str, jp: &str) -> Rect {
 }
 
 fn kv<'a>(p: &Pal, k: &str, v: String, vc: Color) -> Line<'a> {
-    Line::from(vec![Span::styled(format!("{k:<11}"), Style::new().fg(p.dim)), Span::styled(v, Style::new().fg(vc))])
+    Line::from(vec![
+        Span::styled(format!("{k:<11}"), Style::new().fg(p.dim)),
+        Span::styled(v, Style::new().fg(vc)),
+    ])
 }
 
 // ---------------------------------------------------------------- draw
@@ -634,13 +766,17 @@ fn draw(f: &mut Frame, app: &App, s: &State) {
     app.map_rect.set(None);
     let p = pal(app.theme);
     let area = f.area();
-    f.render_widget(Block::default().style(Style::new().bg(p.bg).fg(p.text)), area);
+    f.render_widget(
+        Block::default().style(Style::new().bg(p.bg).fg(p.text)),
+        area,
+    );
     if app.tick < BOOT_TICKS {
         draw_boot(f, app, s, area);
         return;
     }
     let header_h = if app.theme == Theme::Angel { 3 } else { 2 };
-    let [head, body] = Layout::vertical([Constraint::Length(header_h), Constraint::Min(0)]).areas(area);
+    let [head, body] =
+        Layout::vertical([Constraint::Length(header_h), Constraint::Min(0)]).areas(area);
     draw_header(f, app, s, head);
     match app.view {
         View::Logs => {
@@ -667,8 +803,12 @@ fn draw(f: &mut Frame, app: &App, s: &State) {
 fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let compact = area.width < 100 || area.height < 28;
     if compact {
-        let [top, algos, logs] =
-            Layout::vertical([Constraint::Length(9), Constraint::Length(9), Constraint::Min(4)]).areas(area);
+        let [top, algos, logs] = Layout::vertical([
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Min(4),
+        ])
+        .areas(area);
         let inner = panel(f, top, app, "ZONE HEIGHT", "鎖高");
         draw_hero(f, app, s, inner);
         draw_algos(f, app, s, algos);
@@ -684,8 +824,12 @@ fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
         Constraint::Min(5),
     ])
     .areas(area);
-    let [hero, chains, side] =
-        Layout::horizontal([Constraint::Percentage(46), Constraint::Percentage(27), Constraint::Percentage(27)]).areas(top);
+    let [hero, chains, side] = Layout::horizontal([
+        Constraint::Percentage(46),
+        Constraint::Percentage(27),
+        Constraint::Percentage(27),
+    ])
+    .areas(top);
     let inner = panel(f, hero, app, "ZONE HEIGHT", "鎖高");
     draw_hero(f, app, s, inner);
     let inner = panel(f, chains, app, "HIERARCHY", "階層");
@@ -696,7 +840,8 @@ fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let inner = panel(f, econ, app, "ECONOMY", "経済");
     draw_econ(f, app, s, inner);
 
-    let [algos, map] = Layout::horizontal([Constraint::Percentage(58), Constraint::Percentage(42)]).areas(mid);
+    let [algos, map] =
+        Layout::horizontal([Constraint::Percentage(58), Constraint::Percentage(42)]).areas(mid);
     draw_algos(f, app, s, algos);
     let inner = panel(f, map, app, "PEER MAP", "地図");
     draw_map(f, app, s, inner);
@@ -705,7 +850,8 @@ fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
         let inner = panel(f, tape, app, "BLOCK LATTICE", "階層");
         draw_tape(f, app, s, inner);
     }
-    let [events, logs] = Layout::horizontal([Constraint::Percentage(38), Constraint::Percentage(62)]).areas(bottom);
+    let [events, logs] =
+        Layout::horizontal([Constraint::Percentage(38), Constraint::Percentage(62)]).areas(bottom);
     let inner = panel(f, events, app, "EVENTS", "事象");
     draw_events(f, app, s, inner);
     let inner = panel(f, logs, app, "NODE LOG", "記録");
@@ -716,30 +862,64 @@ fn draw_header(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
     let now = now_ms();
     let live = if s.node.online {
-        Span::styled(" ● LIVE ", Style::new().fg(Color::Black).bg(p.ok).add_modifier(Modifier::BOLD))
+        Span::styled(
+            " ● LIVE ",
+            Style::new()
+                .fg(Color::Black)
+                .bg(p.ok)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
-        Span::styled(" ✕ OFFLINE ", Style::new().fg(Color::White).bg(p.alert).add_modifier(Modifier::BOLD))
+        Span::styled(
+            " ✕ OFFLINE ",
+            Style::new()
+                .fg(Color::White)
+                .bg(p.alert)
+                .add_modifier(Modifier::BOLD),
+        )
     };
-    let location = if s.node.location.is_empty() { "—".to_string() } else { s.node.location.clone() };
+    let location = if s.node.location.is_empty() {
+        "—".to_string()
+    } else {
+        s.node.location.clone()
+    };
     let chain = s.node.chain_id.map_or("—".to_string(), |c| c.to_string());
     let (brand, theme_name) = match app.theme {
         Theme::Ghost => ("QUAI//DIVE", "GHOST"),
         Theme::Angel => ("QUAI TERMINAL", "ANGEL"),
     };
     let info = Line::from(vec![
-        Span::styled(format!(" {brand} "), Style::new().fg(p.bg).bg(p.fg).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" {brand} "),
+            Style::new().fg(p.bg).bg(p.fg).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" "),
-        Span::styled(s.node.label.clone(), Style::new().fg(p.text).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("  ◇ {location}  ◇ CHAIN {chain}  "), Style::new().fg(p.dim)),
+        Span::styled(
+            s.node.label.clone(),
+            Style::new().fg(p.text).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  ◇ {location}  ◇ CHAIN {chain}  "),
+            Style::new().fg(p.dim),
+        ),
         live,
-        Span::styled(format!("  {theme_name} ", ), Style::new().fg(p.purple)),
+        Span::styled(format!("  {theme_name} ",), Style::new().fg(p.purple)),
         Span::styled(utc_clock(now), Style::new().fg(p.fg)),
-        Span::styled("   t theme · m map · l log · ? help", Style::new().fg(p.faint)),
+        Span::styled(
+            "   t theme · m map · l log · ? help",
+            Style::new().fg(p.faint),
+        ),
     ]);
     match app.theme {
         Theme::Ghost => {
             let rule: String = (0..area.width)
-                .map(|i| if (i as u64 + app.tick / 2) % 24 == 0 { '╸' } else { '─' })
+                .map(|i| {
+                    if (i as u64 + app.tick / 2) % 24 == 0 {
+                        '╸'
+                    } else {
+                        '─'
+                    }
+                })
                 .collect();
             let text = vec![info, Line::styled(rule, Style::new().fg(p.faint))];
             f.render_widget(Paragraph::new(text), area);
@@ -772,26 +952,47 @@ fn draw_hero(f: &mut Frame, app: &App, s: &State, area: Rect) {
         };
         let text = vec![
             Line::raw(""),
-            Line::styled(title, Style::new().fg(if blink { p.alert } else { p.warn }).add_modifier(Modifier::BOLD)),
+            Line::styled(
+                title,
+                Style::new()
+                    .fg(if blink { p.alert } else { p.warn })
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::raw(""),
             Line::styled(format!("RPC {}", s.node.rpc), Style::new().fg(p.text)),
             Line::styled(err, Style::new().fg(p.alert)),
         ];
-        f.render_widget(Paragraph::new(text).alignment(Alignment::Center).wrap(Wrap { trim: true }), area);
+        f.render_widget(
+            Paragraph::new(text)
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true }),
+            area,
+        );
         return;
     }
     let zone = s.chains.zone.as_ref();
     let number = zone.map_or(0, |z| z.number);
-    let since = zone.map_or(0.0, |z| (now_ms() as f64 / 1000.0 - z.timestamp as f64).max(0.0));
-    let [left, right] = Layout::horizontal([Constraint::Min(30), Constraint::Length(24)]).areas(area);
+    let since = zone.map_or(0.0, |z| {
+        (now_ms() as f64 / 1000.0 - z.timestamp as f64).max(0.0)
+    });
+    let [left, right] =
+        Layout::horizontal([Constraint::Min(30), Constraint::Length(24)]).areas(area);
     // Big height, scrambled for a moment after it changes (GHOST).
     let rows = big_rows(&group_digits(number));
     let fresh = app.tick.saturating_sub(app.zone_changed) < 4 && app.zone_changed > 0;
     let mut lines: Vec<Line> = Vec::new();
     for (r, row) in rows.iter().enumerate() {
-        let style = Style::new().fg(if fresh && app.theme == Theme::Angel { p.warn } else { p.fg }).add_modifier(Modifier::BOLD);
+        let style = Style::new()
+            .fg(if fresh && app.theme == Theme::Angel {
+                p.warn
+            } else {
+                p.fg
+            })
+            .add_modifier(Modifier::BOLD);
         if fresh && app.theme == Theme::Ghost {
-            const KANA: [char; 12] = ['ア', 'カ', 'サ', 'タ', 'ナ', 'ハ', 'マ', 'ヤ', 'ラ', 'ワ', 'ン', 'ヲ'];
+            const KANA: [char; 12] = [
+                'ア', 'カ', 'サ', 'タ', 'ナ', 'ハ', 'マ', 'ヤ', 'ラ', 'ワ', 'ン', 'ヲ',
+            ];
             let mut spans = Vec::new();
             for (i, c) in row.chars().enumerate() {
                 if c == '█' && app.rand(r as u64 * 131 + i as u64) % 9 == 0 {
@@ -814,31 +1015,60 @@ fn draw_hero(f: &mut Frame, app: &App, s: &State, area: Rect) {
         Span::styled("AVG ", Style::new().fg(p.dim)),
         Span::styled(format!("{avg:.2}s"), Style::new().fg(p.text)),
         Span::styled("  TXS ", Style::new().fg(p.dim)),
-        Span::styled(last.map_or("—".into(), |b| b.txs.to_string()), Style::new().fg(p.text)),
+        Span::styled(
+            last.map_or("—".into(), |b| b.txs.to_string()),
+            Style::new().fg(p.text),
+        ),
         Span::styled("  WS ", Style::new().fg(p.dim)),
-        Span::styled(last.map_or("—".into(), |b| b.workshares.to_string()), Style::new().fg(p.text)),
+        Span::styled(
+            last.map_or("—".into(), |b| b.workshares.to_string()),
+            Style::new().fg(p.text),
+        ),
         Span::styled("  ", Style::new()),
-        Span::styled(last.map_or(String::new(), |b| short_hash(&b.hash)), Style::new().fg(p.faint)),
+        Span::styled(
+            last.map_or(String::new(), |b| short_hash(&b.hash)),
+            Style::new().fg(p.faint),
+        ),
     ]));
     f.render_widget(Paragraph::new(lines), left);
     // Seven-segment timer: seconds since the last block.
     let late = avg > 0.0 && since > avg * 3.0;
-    let timer = if since >= 100.0 { format!("{:03}", since as u64) } else { format!("{since:04.1}") };
+    let timer = if since >= 100.0 {
+        format!("{:03}", since as u64)
+    } else {
+        format!("{since:04.1}")
+    };
     let label = match app.theme {
         Theme::Ghost => "SINCE LAST BLOCK",
         Theme::Angel => "活動限界 BLOCK TIMER",
     };
-    let color = if late { p.alert } else if app.theme == Theme::Angel { p.warn } else { p.fg };
+    let color = if late {
+        p.alert
+    } else if app.theme == Theme::Angel {
+        p.warn
+    } else {
+        p.fg
+    };
     let mut tl = vec![Line::styled(label, Style::new().fg(p.dim))];
     for row in seg_rows(&timer) {
-        tl.push(Line::styled(row, Style::new().fg(color).add_modifier(Modifier::BOLD)));
+        tl.push(Line::styled(
+            row,
+            Style::new().fg(color).add_modifier(Modifier::BOLD),
+        ));
     }
     let gauge_w = right.width.saturating_sub(2) as f64;
-    let frac = if avg > 0.0 { (since / (avg * 2.0)).min(1.0) } else { 0.0 };
+    let frac = if avg > 0.0 {
+        (since / (avg * 2.0)).min(1.0)
+    } else {
+        0.0
+    };
     let filled = (gauge_w * frac) as usize;
     tl.push(Line::from(vec![
         Span::styled("▮".repeat(filled), Style::new().fg(color)),
-        Span::styled("▯".repeat((gauge_w as usize).saturating_sub(filled)), Style::new().fg(p.faint)),
+        Span::styled(
+            "▯".repeat((gauge_w as usize).saturating_sub(filled)),
+            Style::new().fg(p.faint),
+        ),
     ]));
     f.render_widget(Paragraph::new(tl), right);
 }
@@ -847,15 +1077,24 @@ fn draw_chains(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
     let now = now_ms() as i64 / 1000;
     let mut lines = Vec::new();
-    for (name, head, c) in [("PRIME", &s.chains.prime, p.alert), ("REGION", &s.chains.region, p.purple), ("ZONE", &s.chains.zone, p.fg)] {
+    for (name, head, c) in [
+        ("PRIME", &s.chains.prime, p.alert),
+        ("REGION", &s.chains.region, p.purple),
+        ("ZONE", &s.chains.zone, p.fg),
+    ] {
         let (num, ago) = match head {
             Some(h) => (thousands(h.number), age(now - h.timestamp as i64)),
             None => ("—".into(), String::new()),
         };
-        let pulse = head.as_ref().is_some_and(|h| now - (h.timestamp as i64) < 2);
+        let pulse = head
+            .as_ref()
+            .is_some_and(|h| now - (h.timestamp as i64) < 2);
         lines.push(Line::from(vec![
             Span::styled(if pulse { "◆ " } else { "◇ " }, Style::new().fg(c)),
-            Span::styled(format!("{name:<7}"), Style::new().fg(c).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{name:<7}"),
+                Style::new().fg(c).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!("{num:>11}"), Style::new().fg(p.text)),
             Span::styled(format!("  {ago}"), Style::new().fg(p.dim)),
         ]));
@@ -863,29 +1102,62 @@ fn draw_chains(f: &mut Frame, app: &App, s: &State, area: Rect) {
     lines.push(Line::raw(""));
     match &s.compare {
         Some(c) => {
-            let rate = if c.compared > 0 { c.matched as f64 * 100.0 / c.compared as f64 } else { 0.0 };
+            let rate = if c.compared > 0 {
+                c.matched as f64 * 100.0 / c.compared as f64
+            } else {
+                0.0
+            };
             let ok = c.compared > 0 && c.matched == c.compared;
-            let label = if app.theme == Theme::Angel { "シンクロ率" } else { "同期率" };
+            let label = if app.theme == Theme::Angel {
+                "シンクロ率"
+            } else {
+                "同期率"
+            };
             lines.push(Line::from(vec![
                 Span::styled(format!("{label} SYNC "), Style::new().fg(p.dim)),
-                Span::styled(format!("{rate:5.1}%"), Style::new().fg(if ok { p.ok } else { p.alert }).add_modifier(Modifier::BOLD)),
-                Span::styled(format!(" {}/{}", c.matched, c.compared), Style::new().fg(p.dim)),
+                Span::styled(
+                    format!("{rate:5.1}%"),
+                    Style::new()
+                        .fg(if ok { p.ok } else { p.alert })
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(" {}/{}", c.matched, c.compared),
+                    Style::new().fg(p.dim),
+                ),
             ]));
             lines.push(Line::from(vec![
                 Span::styled(format!("⇄ {} ", c.label), Style::new().fg(p.text)),
                 Span::styled(
-                    if c.online { thousands(c.height) } else { "offline".into() },
+                    if c.online {
+                        thousands(c.height)
+                    } else {
+                        "offline".into()
+                    },
                     Style::new().fg(if c.online { p.text } else { p.alert }),
                 ),
             ]));
             if let Some(m) = c.last_mismatch {
-                lines.push(Line::styled(format!("DIFFERS at {}", thousands(m)), Style::new().fg(p.alert)));
+                lines.push(Line::styled(
+                    format!("DIFFERS at {}", thousands(m)),
+                    Style::new().fg(p.alert),
+                ));
             }
         }
         None => {
             if let Some(b) = s.blocks.back() {
-                lines.push(kv(&p, "DIFFICULTY", group_digits(b.difficulty.parse().unwrap_or(0)), p.text));
-                lines.push(kv(&p, "GAS", format!("{} / {}", thousands(b.gas_used), thousands(b.gas_limit)), p.text));
+                lines.push(kv(
+                    &p,
+                    "DIFFICULTY",
+                    group_digits(b.difficulty.parse().unwrap_or(0)),
+                    p.text,
+                ));
+                lines.push(kv(
+                    &p,
+                    "GAS",
+                    format!("{} / {}", thousands(b.gas_used), thousands(b.gas_limit)),
+                    p.text,
+                ));
             }
         }
     }
@@ -900,18 +1172,40 @@ fn draw_peers(f: &mut Frame, app: &App, s: &State, area: Rect) {
         let k = ((n as f64 / total) * w).round() as usize;
         vec![
             Span::styled("█".repeat(k), Style::new().fg(c)),
-            Span::styled("░".repeat((w as usize).saturating_sub(k)), Style::new().fg(p.faint)),
+            Span::styled(
+                "░".repeat((w as usize).saturating_sub(k)),
+                Style::new().fg(p.faint),
+            ),
         ]
     };
-    let mut l1 = vec![Span::styled(format!("IN  {:>4} ", s.peers.inbound), Style::new().fg(p.text))];
+    let mut l1 = vec![Span::styled(
+        format!("IN  {:>4} ", s.peers.inbound),
+        Style::new().fg(p.text),
+    )];
     l1.extend(bar(s.peers.inbound, p.fg));
-    let mut l2 = vec![Span::styled(format!("OUT {:>4} ", s.peers.outbound), Style::new().fg(p.text))];
+    let mut l2 = vec![Span::styled(
+        format!("OUT {:>4} ", s.peers.outbound),
+        Style::new().fg(p.text),
+    )];
     l2.extend(bar(s.peers.outbound, p.purple));
     let l3 = Line::from(vec![
-        Span::styled(format!("TOTAL {}  ", s.peers.count), Style::new().fg(p.fg).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("MAPPED {}  GEO {}", s.peers.list.iter().filter(|x| x.place.is_some()).count(), s.peers.geo), Style::new().fg(p.dim)),
+        Span::styled(
+            format!("TOTAL {}  ", s.peers.count),
+            Style::new().fg(p.fg).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(
+                "MAPPED {}  GEO {}",
+                s.peers.list.iter().filter(|x| x.place.is_some()).count(),
+                s.peers.geo
+            ),
+            Style::new().fg(p.dim),
+        ),
     ]);
-    f.render_widget(Paragraph::new(vec![Line::from(l1), Line::from(l2), l3]), area);
+    f.render_widget(
+        Paragraph::new(vec![Line::from(l1), Line::from(l2), l3]),
+        area,
+    );
 }
 
 fn draw_econ(f: &mut Frame, app: &App, s: &State, area: Rect) {
@@ -922,9 +1216,24 @@ fn draw_econ(f: &mut Frame, app: &App, s: &State, area: Rect) {
         lines.push(kv(&p, "kQUAI", e18(&b.exchange_rate), p.text));
     }
     if let Some(m) = &s.mining {
-        lines.push(kv(&p, "REWARD", format!("{} QUAI", m.estimated_block_reward), p.fg));
-        lines.push(kv(&p, "WORKSHARE", format!("{} QUAI", m.workshare_reward), p.text));
-        lines.push(kv(&p, "SUPPLY", format!("{} QUAI", group_digits(m.quai_supply.parse().unwrap_or(0))), p.text));
+        lines.push(kv(
+            &p,
+            "REWARD",
+            format!("{} QUAI", m.estimated_block_reward),
+            p.fg,
+        ));
+        lines.push(kv(
+            &p,
+            "WORKSHARE",
+            format!("{} QUAI", m.workshare_reward),
+            p.text,
+        ));
+        lines.push(kv(
+            &p,
+            "SUPPLY",
+            format!("{} QUAI", group_digits(m.quai_supply.parse().unwrap_or(0))),
+            p.text,
+        ));
     }
     if lines.is_empty() {
         lines.push(Line::styled("awaiting data…", Style::new().fg(p.dim)));
@@ -946,19 +1255,35 @@ fn draw_algos(f: &mut Frame, app: &App, s: &State, area: Rect) {
     match app.theme {
         Theme::Ghost => {
             let inner = panel(f, area, app, "MERGED MINING", "演算");
-            let rows = Layout::vertical([Constraint::Length(3), Constraint::Length(3), Constraint::Length(3), Constraint::Min(0)]).split(inner);
+            let rows = Layout::vertical([
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Min(0),
+            ])
+            .split(inner);
             for (i, (name, _, a, pend)) in algo_rows(s).into_iter().enumerate() {
                 let Some(&row) = rows.get(i) else { continue };
-                let [label, spark] = Layout::horizontal([Constraint::Length(30), Constraint::Min(4)]).areas(row);
+                let [label, spark] =
+                    Layout::horizontal([Constraint::Length(30), Constraint::Min(4)]).areas(row);
                 let c = [p.fg, p.purple, p.warn][i];
                 let text = vec![
                     Line::from(vec![
-                        Span::styled(format!("{name:<7}"), Style::new().fg(c).add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            format!("{name:<7}"),
+                            Style::new().fg(c).add_modifier(Modifier::BOLD),
+                        ),
                         Span::styled(si_rate(a.hashrate), Style::new().fg(p.text)),
                     ]),
                     Line::from(vec![
-                        Span::styled(format!("share {:>5.2}s", a.share_time), Style::new().fg(p.dim)),
-                        Span::styled(format!("  pending {pend}"), Style::new().fg(if pend > 0 { c } else { p.faint })),
+                        Span::styled(
+                            format!("share {:>5.2}s", a.share_time),
+                            Style::new().fg(p.dim),
+                        ),
+                        Span::styled(
+                            format!("  pending {pend}"),
+                            Style::new().fg(if pend > 0 { c } else { p.faint }),
+                        ),
                     ]),
                 ];
                 f.render_widget(Paragraph::new(text), label);
@@ -967,7 +1292,12 @@ fn draw_algos(f: &mut Frame, app: &App, s: &State, area: Rect) {
         }
         Theme::Angel => {
             // MAGI-style triad: three verdict panels.
-            let cols = Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(1, 3), Constraint::Ratio(1, 3)]).split(area);
+            let cols = Layout::horizontal([
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+            ])
+            .split(area);
             for (i, (name, n, a, pend)) in algo_rows(s).into_iter().enumerate() {
                 let Some(&col) = cols.get(i) else { continue };
                 let approved = a.hashrate > 0.0 && a.share_time > 0.0;
@@ -977,27 +1307,47 @@ fn draw_algos(f: &mut Frame, app: &App, s: &State, area: Rect) {
                     .border_style(Style::new().fg(if approved { p.fg } else { p.alert }))
                     .title(Line::from(Span::styled(
                         format!(" {name}·{n} "),
-                        Style::new().fg(Color::Black).bg(if approved { p.fg } else { p.alert }).add_modifier(Modifier::BOLD),
+                        Style::new()
+                            .fg(Color::Black)
+                            .bg(if approved { p.fg } else { p.alert })
+                            .add_modifier(Modifier::BOLD),
                     )));
                 let inner = block.inner(col);
                 f.render_widget(block, col);
                 let blink = approved || (app.tick / 5) % 2 == 0;
-                let verdict = if approved { "承認 APPROVED" } else { "否決 DENIED" };
+                let verdict = if approved {
+                    "承認 APPROVED"
+                } else {
+                    "否決 DENIED"
+                };
                 let vstyle = if approved {
-                    Style::new().fg(Color::Black).bg(p.ok).add_modifier(Modifier::BOLD)
+                    Style::new()
+                        .fg(Color::Black)
+                        .bg(p.ok)
+                        .add_modifier(Modifier::BOLD)
                 } else if blink {
-                    Style::new().fg(Color::White).bg(p.alert).add_modifier(Modifier::BOLD)
+                    Style::new()
+                        .fg(Color::White)
+                        .bg(p.alert)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::new().fg(p.alert)
                 };
                 let text = vec![
-                    Line::styled(si_rate(a.hashrate), Style::new().fg(p.warn).add_modifier(Modifier::BOLD)),
-                    Line::styled(format!("SHARE {:.2}s", a.share_time), Style::new().fg(p.text)),
+                    Line::styled(
+                        si_rate(a.hashrate),
+                        Style::new().fg(p.warn).add_modifier(Modifier::BOLD),
+                    ),
+                    Line::styled(
+                        format!("SHARE {:.2}s", a.share_time),
+                        Style::new().fg(p.text),
+                    ),
                     Line::styled(format!("PENDING {pend}"), Style::new().fg(p.text)),
                     Line::raw(""),
                     Line::styled(format!(" {verdict} "), vstyle),
                 ];
-                let [t, spark] = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).areas(inner);
+                let [t, spark] =
+                    Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).areas(inner);
                 f.render_widget(Paragraph::new(text).alignment(Alignment::Center), t);
                 spark_right(f, &app.hist[i], p.dim, spark);
             }
@@ -1015,8 +1365,17 @@ fn spark_right(f: &mut Frame, hist: &VecDeque<u64>, color: Color, area: Rect) {
     let data: Vec<u64> = hist.iter().skip(hist.len() - n).copied().collect();
     let min = data.iter().copied().min().unwrap_or(0).saturating_sub(5);
     let shifted: Vec<u64> = data.iter().map(|v| v - min).collect();
-    let r = Rect { x: area.x + area.width - n as u16, width: n as u16, ..area };
-    f.render_widget(Sparkline::default().data(&shifted).style(Style::new().fg(color)), r);
+    let r = Rect {
+        x: area.x + area.width - n as u16,
+        width: n as u16,
+        ..area
+    };
+    f.render_widget(
+        Sparkline::default()
+            .data(&shifted)
+            .style(Style::new().fg(color)),
+        r,
+    );
 }
 
 fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
@@ -1028,27 +1387,54 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
         // Leave the area blank; the loop places the image over it.
         f.render_widget(Clear, area);
         f.render_widget(Block::default().style(Style::new().bg(p.bg)), area);
-        app.map_rect.set(Some(Rect { height: area.height - 1, ..area }));
+        app.map_rect.set(Some(Rect {
+            height: area.height - 1,
+            ..area
+        }));
         let mapped = s.peers.list.iter().filter(|x| x.place.is_some()).count();
         let caption = if mapped == 0 {
-            s.peers.note.clone().unwrap_or_else(|| format!("{} peers; enable --geoip-db or --geoip-online to place them", s.peers.list.len()))
+            s.peers.note.clone().unwrap_or_else(|| {
+                format!(
+                    "{} peers; enable --geoip-db or --geoip-online to place them",
+                    s.peers.list.len()
+                )
+            })
         } else {
-            format!("{mapped} peers located · {} tcp · pixels", s.peers.list.len())
+            format!(
+                "{mapped} peers located · {} tcp · pixels",
+                s.peers.list.len()
+            )
         };
-        let cap_area = Rect { y: area.y + area.height - 1, height: 1, ..area };
-        f.render_widget(Paragraph::new(Line::styled(caption, Style::new().fg(p.dim))).alignment(Alignment::Right), cap_area);
+        let cap_area = Rect {
+            y: area.y + area.height - 1,
+            height: 1,
+            ..area
+        };
+        f.render_widget(
+            Paragraph::new(Line::styled(caption, Style::new().fg(p.dim)))
+                .alignment(Alignment::Right),
+            cap_area,
+        );
         return;
     }
     let mut land = Vec::new();
     for y in 0..world::HEIGHT {
         for x in 0..world::WIDTH {
             if world::land(x, y) {
-                land.push((-180.0 + (x as f64 + 0.5) * 1.5, 90.0 - (y as f64 + 0.5) * 1.5));
+                land.push((
+                    -180.0 + (x as f64 + 0.5) * 1.5,
+                    90.0 - (y as f64 + 0.5) * 1.5,
+                ));
             }
         }
     }
-    let peers: Vec<(f64, f64)> =
-        s.peers.list.iter().filter_map(|x| x.place.as_ref()).map(|pl| (pl.lon, pl.lat)).collect();
+    let peers: Vec<(f64, f64)> = s
+        .peers
+        .list
+        .iter()
+        .filter_map(|x| x.place.as_ref())
+        .map(|pl| (pl.lon, pl.lat))
+        .collect();
     let here = s.peers.here.clone();
     let pulse = (app.tick / 4) % 2 == 0;
     let land_c = p.faint;
@@ -1061,15 +1447,27 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
         .y_bounds([-60.0, 85.0])
         .background_color(p.bg)
         .paint(move |ctx| {
-            ctx.draw(&Points { coords: &land, color: land_c });
+            ctx.draw(&Points {
+                coords: &land,
+                color: land_c,
+            });
             ctx.layer();
             if let Some(h) = &here {
                 for &(x, y) in &peers {
-                    ctx.draw(&CLine { x1: h.lon, y1: h.lat, x2: x, y2: y, color: arc_c });
+                    ctx.draw(&CLine {
+                        x1: h.lon,
+                        y1: h.lat,
+                        x2: x,
+                        y2: y,
+                        color: arc_c,
+                    });
                 }
             }
             ctx.layer();
-            ctx.draw(&Points { coords: &peers, color: peer_c });
+            ctx.draw(&Points {
+                coords: &peers,
+                color: peer_c,
+            });
             if let Some(h) = &here {
                 ctx.print(h.lon, h.lat, Span::styled("◎", Style::new().fg(alert)));
             }
@@ -1078,15 +1476,27 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let mapped = s.peers.list.iter().filter(|x| x.place.is_some()).count();
     let note = if mapped == 0 {
         s.peers.note.clone().or_else(|| {
-            (s.peers.geo == "off" && !s.peers.list.is_empty())
-                .then(|| format!("{} peers; enable --geoip-db or --geoip-online to place them", s.peers.list.len()))
+            (s.peers.geo == "off" && !s.peers.list.is_empty()).then(|| {
+                format!(
+                    "{} peers; enable --geoip-db or --geoip-online to place them",
+                    s.peers.list.len()
+                )
+            })
         })
     } else {
         None
     };
-    let caption = note.unwrap_or_else(|| format!("{mapped} peers located · {} tcp", s.peers.list.len()));
-    let cap_area = Rect { y: area.y + area.height - 1, height: 1, ..area };
-    f.render_widget(Paragraph::new(Line::styled(caption, Style::new().fg(p.dim))).alignment(Alignment::Right), cap_area);
+    let caption =
+        note.unwrap_or_else(|| format!("{mapped} peers located · {} tcp", s.peers.list.len()));
+    let cap_area = Rect {
+        y: area.y + area.height - 1,
+        height: 1,
+        ..area
+    };
+    f.render_widget(
+        Paragraph::new(Line::styled(caption, Style::new().fg(p.dim))).alignment(Alignment::Right),
+        cap_area,
+    );
 }
 
 /// The block lattice: prime, region and zone lanes (rows 0, 2, 4). A block
@@ -1103,10 +1513,23 @@ fn draw_tape(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let ghost = app.theme == Theme::Ghost;
     let buf = f.buffer_mut();
     for (k, name) in ["PRIME", "REGION", "ZONE"].iter().enumerate() {
-        buf.set_string(area.x, lane(k), name, Style::new().fg(tier[k]).add_modifier(Modifier::BOLD));
+        buf.set_string(
+            area.x,
+            lane(k),
+            name,
+            Style::new().fg(tier[k]).add_modifier(Modifier::BOLD),
+        );
     }
     let slots = ((area.width - GUTTER) / 2) as usize;
-    let blocks: Vec<_> = s.blocks.iter().rev().take(slots).collect::<Vec<_>>().into_iter().rev().collect();
+    let blocks: Vec<_> = s
+        .blocks
+        .iter()
+        .rev()
+        .take(slots)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     let pad = (slots - blocks.len()) as u16 * 2;
     let x_of = |i: usize| area.x + GUTTER + pad + (i as u16) * 2;
     let fresh = app.tick.saturating_sub(app.zone_changed) < 10;
@@ -1121,7 +1544,8 @@ fn draw_tape(f: &mut Frame, app: &App, s: &State, area: Rect) {
             if let Some(px) = prev {
                 for xx in px + 1..x {
                     if let Some(c) = buf.cell_mut((xx, lane(k))) {
-                        c.set_symbol("─").set_fg(if k == 2 { p.dim } else { tier[k] });
+                        c.set_symbol("─")
+                            .set_fg(if k == 2 { p.dim } else { tier[k] });
                     }
                 }
             }
@@ -1158,7 +1582,24 @@ fn draw_tape(f: &mut Frame, app: &App, s: &State, area: Rect) {
         }
     }
     // Latest prime and region numbers at the right end of their lanes.
-    for (k, num) in [(0usize, blocks.iter().rev().find(|b| b.order == 0).map(|b| b.prime_number)), (1, blocks.iter().rev().find(|b| b.order <= 1).map(|b| b.region_number))] {
+    for (k, num) in [
+        (
+            0usize,
+            blocks
+                .iter()
+                .rev()
+                .find(|b| b.order == 0)
+                .map(|b| b.prime_number),
+        ),
+        (
+            1,
+            blocks
+                .iter()
+                .rev()
+                .find(|b| b.order <= 1)
+                .map(|b| b.region_number),
+        ),
+    ] {
         if let Some(n) = num {
             let label = format!(" {} ", thousands(n));
             let x = area.x + area.width.saturating_sub(label.chars().count() as u16);
@@ -1188,7 +1629,10 @@ fn draw_events(f: &mut Frame, app: &App, s: &State, area: Rect) {
         ]));
     }
     if lines.is_empty() {
-        lines.push(Line::styled("watching for prime and region blocks…", Style::new().fg(p.dim)));
+        lines.push(Line::styled(
+            "watching for prime and region blocks…",
+            Style::new().fg(p.dim),
+        ));
     }
     f.render_widget(Paragraph::new(lines), area);
 }
@@ -1200,7 +1644,10 @@ fn draw_logs(f: &mut Frame, app: &App, s: &State, area: Rect) {
             Some(file) => format!("following {file}"),
             None => "no log file: run with --logs <nodelogs dir or file>".into(),
         };
-        f.render_widget(Paragraph::new(Line::styled(msg, Style::new().fg(p.dim))), area);
+        f.render_widget(
+            Paragraph::new(Line::styled(msg, Style::new().fg(p.dim))),
+            area,
+        );
         return;
     }
     let n = area.height as usize;
@@ -1228,35 +1675,81 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
     let left = fl.until.saturating_sub(app.tick);
     match app.theme {
         Theme::Ghost => {
-            let title = if fl.prime { "PRIME CONVERGENCE // 主鎖収束" } else { "REGION CONVERGENCE // 領域収束" };
-            let w = (title.chars().count() as u16 + 10).max(fl.text.len() as u16 + 6).min(area.width);
-            let r = Rect { x: area.x + (area.width - w) / 2, y: area.y + (area.height / 2).saturating_sub(2), width: w, height: 5.min(area.height) };
+            let title = if fl.prime {
+                "PRIME CONVERGENCE // 主鎖収束"
+            } else {
+                "REGION CONVERGENCE // 領域収束"
+            };
+            let w = (title.chars().count() as u16 + 10)
+                .max(fl.text.len() as u16 + 6)
+                .min(area.width);
+            let r = Rect {
+                x: area.x + (area.width - w) / 2,
+                y: area.y + (area.height / 2).saturating_sub(2),
+                width: w,
+                height: 5.min(area.height),
+            };
             let on = left % 4 < 2;
             let (fg, bg) = if on { (p.bg, p.fg) } else { (p.fg, p.bg) };
             f.render_widget(Clear, r);
-            let block = Block::default().borders(Borders::ALL).border_style(Style::new().fg(p.fg)).style(Style::new().bg(bg));
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::new().fg(p.fg))
+                .style(Style::new().bg(bg));
             let text = vec![
                 Line::styled(title, Style::new().fg(fg).add_modifier(Modifier::BOLD)),
                 Line::styled(fl.text.clone(), Style::new().fg(fg)),
             ];
-            f.render_widget(Paragraph::new(text).block(block).alignment(Alignment::Center), r);
+            f.render_widget(
+                Paragraph::new(text)
+                    .block(block)
+                    .alignment(Alignment::Center),
+                r,
+            );
         }
         Theme::Angel => {
-            let r = Rect { x: area.x, y: area.y + (area.height / 2).saturating_sub(3), width: area.width, height: 6.min(area.height) };
+            let r = Rect {
+                x: area.x,
+                y: area.y + (area.height / 2).saturating_sub(3),
+                width: area.width,
+                height: 6.min(area.height),
+            };
             let on = left % 4 < 2;
             let bg = if fl.prime { p.alert } else { p.purple };
             f.render_widget(Clear, r);
-            let stripe: String = (0..area.width).map(|i| if ((i as u64 + app.tick) / 3) % 2 == 0 { '▞' } else { ' ' }).collect();
-            let title = if fl.prime { "PATTERN PRIME — 主鎖確認" } else { "PATTERN REGION — 領域確認" };
+            let stripe: String = (0..area.width)
+                .map(|i| {
+                    if ((i as u64 + app.tick) / 3) % 2 == 0 {
+                        '▞'
+                    } else {
+                        ' '
+                    }
+                })
+                .collect();
+            let title = if fl.prime {
+                "PATTERN PRIME — 主鎖確認"
+            } else {
+                "PATTERN REGION — 領域確認"
+            };
             let text = vec![
                 Line::styled(stripe.clone(), Style::new().fg(Color::Black).bg(bg)),
                 Line::raw(""),
-                Line::styled(title, Style::new().fg(if on { Color::White } else { Color::Black }).add_modifier(Modifier::BOLD)),
+                Line::styled(
+                    title,
+                    Style::new()
+                        .fg(if on { Color::White } else { Color::Black })
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Line::styled(fl.text.to_uppercase(), Style::new().fg(Color::Black)),
                 Line::raw(""),
                 Line::styled(stripe, Style::new().fg(Color::Black).bg(bg)),
             ];
-            f.render_widget(Paragraph::new(text).style(Style::new().bg(bg)).alignment(Alignment::Center), r);
+            f.render_widget(
+                Paragraph::new(text)
+                    .style(Style::new().bg(bg))
+                    .alignment(Alignment::Center),
+                r,
+            );
         }
     }
 }
@@ -1265,7 +1758,12 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
     let p = pal(app.theme);
     let w = 46.min(area.width);
     let h = 11.min(area.height);
-    let r = Rect { x: area.x + (area.width - w) / 2, y: area.y + (area.height - h) / 2, width: w, height: h };
+    let r = Rect {
+        x: area.x + (area.width - w) / 2,
+        y: area.y + (area.height - h) / 2,
+        width: w,
+        height: h,
+    };
     f.render_widget(Clear, r);
     let inner = panel(f, r, app, "CONTROLS", "操作");
     let lines = vec![
@@ -1304,7 +1802,11 @@ fn draw_boot(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     for (i, st) in steps.iter().take(shown).enumerate() {
         let last = i + 1 == steps.len();
-        let style = if last { Style::new().fg(p.bg).bg(p.fg).add_modifier(Modifier::BOLD) } else { Style::new().fg(p.fg) };
+        let style = if last {
+            Style::new().fg(p.bg).bg(p.fg).add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(p.fg)
+        };
         lines.push(Line::styled(format!(" {st} "), style));
     }
     let w = 50.min(area.width) as usize;
@@ -1314,9 +1816,16 @@ fn draw_boot(f: &mut Frame, app: &App, s: &State, area: Rect) {
         Span::styled("█".repeat(done.min(w)), Style::new().fg(p.fg)),
         Span::styled("░".repeat(w.saturating_sub(done)), Style::new().fg(p.faint)),
     ]));
-    lines.push(Line::styled(format!("{}  {}", s.node.label, s.node.rpc), Style::new().fg(p.dim)));
+    lines.push(Line::styled(
+        format!("{}  {}", s.node.label, s.node.rpc),
+        Style::new().fg(p.dim),
+    ));
     let h = lines.len() as u16;
-    let r = Rect { y: area.y + area.height.saturating_sub(h) / 2, height: h.min(area.height), ..area };
+    let r = Rect {
+        y: area.y + area.height.saturating_sub(h) / 2,
+        height: h.min(area.height),
+        ..area
+    };
     f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), r);
 }
 
@@ -1353,9 +1862,21 @@ mod tests {
         s.node.chain_id = Some(9);
         s.node.online = true;
         let t = now / 1000;
-        s.chains.prime = Some(Head { number: 2_297_888, hash: "0xaa".into(), timestamp: t - 40 });
-        s.chains.region = Some(Head { number: 5_579_748, hash: "0xbb".into(), timestamp: t - 12 });
-        s.chains.zone = Some(Head { number: 10_390_405, hash: "0x435ba623ce10a380".into(), timestamp: t - 3 });
+        s.chains.prime = Some(Head {
+            number: 2_297_888,
+            hash: "0xaa".into(),
+            timestamp: t - 40,
+        });
+        s.chains.region = Some(Head {
+            number: 5_579_748,
+            hash: "0xbb".into(),
+            timestamp: t - 12,
+        });
+        s.chains.zone = Some(Head {
+            number: 10_390_405,
+            hash: "0x435ba623ce10a380".into(),
+            timestamp: t - 3,
+        });
         for i in 0..60u64 {
             s.blocks.push_back(BlockInfo {
                 number: 10_390_346 + i,
@@ -1366,7 +1887,13 @@ mod tests {
                 gas_used: (i * 700_000) % 50_000_000,
                 gas_limit: 50_000_000,
                 base_fee: "27231908540241".into(),
-                order: if i == 40 { 0 } else if i % 9 == 0 { 1 } else { 2 },
+                order: if i == 40 {
+                    0
+                } else if i % 9 == 0 {
+                    1
+                } else {
+                    2
+                },
                 difficulty: "1038556905100".into(),
                 exchange_rate: "13264669140000000000".into(),
                 ..Default::default()
@@ -1375,9 +1902,21 @@ mod tests {
         s.mining = Some(Mining {
             avg_block_time: 5.257,
             blocks_analyzed: 172,
-            kawpow: Algo { hashrate: 243_688_736_202.0, difficulty: "1".into(), share_time: 5.2 },
-            sha: Algo { hashrate: 2.56e17, difficulty: "1".into(), share_time: 1.27 },
-            scrypt: Algo { hashrate: 0.0, difficulty: "1".into(), share_time: 0.0 },
+            kawpow: Algo {
+                hashrate: 243_688_736_202.0,
+                difficulty: "1".into(),
+                share_time: 5.2,
+            },
+            sha: Algo {
+                hashrate: 2.56e17,
+                difficulty: "1".into(),
+                share_time: 1.27,
+            },
+            scrypt: Algo {
+                hashrate: 0.0,
+                difficulty: "1".into(),
+                share_time: 0.0,
+            },
             estimated_block_reward: "105.3384".into(),
             workshare_reward: "11.7042".into(),
             quai_supply: "1124728606".into(),
@@ -1389,20 +1928,57 @@ mod tests {
         s.peers.inbound = 76;
         s.peers.outbound = 9;
         s.peers.geo = "db".into();
-        s.peers.here = Some(Place { lat: 41.9, lon: -87.6, city: String::new(), country: "US".into() });
-        for (lat, lon) in [(52.5, 13.4), (35.7, 139.7), (-33.9, 151.2), (40.7, -74.0), (1.35, 103.8)] {
+        s.peers.here = Some(Place {
+            lat: 41.9,
+            lon: -87.6,
+            city: String::new(),
+            country: "US".into(),
+        });
+        for (lat, lon) in [
+            (52.5, 13.4),
+            (35.7, 139.7),
+            (-33.9, 151.2),
+            (40.7, -74.0),
+            (1.35, 103.8),
+        ] {
             s.peers.list.push(Peer {
                 ip: "203.0.113.7".into(),
                 port: 4002,
                 dir: "in".into(),
-                place: Some(Place { lat, lon, city: String::new(), country: String::new() }),
+                place: Some(Place {
+                    lat,
+                    lon,
+                    city: String::new(),
+                    country: String::new(),
+                }),
                 since_ms: now,
             });
         }
-        s.compare = Some(Compare { label: "GO-QUAI".into(), rpc: "x".into(), height: 10_390_405, online: true, compared: 64, matched: 64, last_mismatch: None });
-        s.push_event(now - 5000, "prime", "Prime block 2297888 (zone 10390386)".into(), Some(10_390_386));
-        s.push_event(now - 2000, "region", "Region block 5579748 (zone 10390400)".into(), Some(10_390_400));
-        s.push_log("INFO".into(), "2026-10-01T17:23:03Z  INFO rsq_node::node: network peers=85".into());
+        s.compare = Some(Compare {
+            label: "GO-QUAI".into(),
+            rpc: "x".into(),
+            height: 10_390_405,
+            online: true,
+            compared: 64,
+            matched: 64,
+            last_mismatch: None,
+        });
+        s.push_event(
+            now - 5000,
+            "prime",
+            "Prime block 2297888 (zone 10390386)".into(),
+            Some(10_390_386),
+        );
+        s.push_event(
+            now - 2000,
+            "region",
+            "Region block 5579748 (zone 10390400)".into(),
+            Some(10_390_400),
+        );
+        s.push_log(
+            "INFO".into(),
+            "2026-10-01T17:23:03Z  INFO rsq_node::node: network peers=85".into(),
+        );
         s.push_log("WARN".into(), "2026-10-01T17:23:04Z  WARN rsq_chain::indexer: ChainIndexer: Reorging the utxo indexer len=1".into());
         s
     }
@@ -1417,7 +1993,11 @@ mod tests {
         app.tick = BOOT_TICKS + 3;
         app.view = view;
         app.observe(&s);
-        app.hist = [VecDeque::from(vec![1100, 1110, 1105]), VecDeque::from(vec![1740, 1741]), VecDeque::new()];
+        app.hist = [
+            VecDeque::from(vec![1100, 1110, 1105]),
+            VecDeque::from(vec![1740, 1741]),
+            VecDeque::new(),
+        ];
         if term.draw(|f| draw(f, &app, &s)).is_err() {
             return "draw error".into();
         }
@@ -1430,7 +2010,11 @@ mod tests {
                 let sym = buf.cell((x, y)).map_or(" ", |c| c.symbol());
                 out.push_str(sym);
                 // A double-width glyph occupies the next cell too.
-                x += if sym.chars().next().is_some_and(wide) { 2 } else { 1 };
+                x += if sym.chars().next().is_some_and(wide) {
+                    2
+                } else {
+                    1
+                };
             }
             out.push('\n');
         }
@@ -1443,15 +2027,42 @@ mod tests {
     #[test]
     fn renders_both_themes() {
         let g = render(Theme::Ghost, 160, 48, View::Dash);
-        for want in ["QUAI//DIVE", "RS-QUAI SOAK", "Cyprus-1", "HIERARCHY", "MERGED MINING", "243.69 GH/s", "256.00 PH/s", "PEER MAP", "NODE LOG", "network peers=85", "100.0%", "BLOCK LATTICE"] {
+        for want in [
+            "QUAI//DIVE",
+            "RS-QUAI SOAK",
+            "Cyprus-1",
+            "HIERARCHY",
+            "MERGED MINING",
+            "243.69 GH/s",
+            "256.00 PH/s",
+            "PEER MAP",
+            "NODE LOG",
+            "network peers=85",
+            "100.0%",
+            "BLOCK LATTICE",
+        ] {
             assert!(g.contains(want), "GHOST frame lacks {want:?}\n{g}");
         }
         let a = render(Theme::Angel, 160, 48, View::Dash);
-        for want in ["QUAI TERMINAL", "KAWPOW·1", "SHA·2", "SCRYPT·3", "承認 APPROVED", "否決 DENIED", "ECONOMY", "105.3384 QUAI", "27,231 Gwei", "13.2646"] {
+        for want in [
+            "QUAI TERMINAL",
+            "KAWPOW·1",
+            "SHA·2",
+            "SCRYPT·3",
+            "承認 APPROVED",
+            "否決 DENIED",
+            "ECONOMY",
+            "105.3384 QUAI",
+            "27,231 Gwei",
+            "13.2646",
+        ] {
             assert!(a.contains(want), "ANGEL frame lacks {want:?}\n{a}");
         }
         let small = render(Theme::Angel, 90, 26, View::Dash);
-        assert!(small.contains("ZONE HEIGHT") && small.contains("NODE LOG"), "{small}");
+        assert!(
+            small.contains("ZONE HEIGHT") && small.contains("NODE LOG"),
+            "{small}"
+        );
         let map = render(Theme::Ghost, 120, 40, View::Map);
         assert!(map.contains("5 peers located"), "{map}");
         let logs = render(Theme::Ghost, 100, 30, View::Logs);
@@ -1468,7 +2079,11 @@ mod tests {
                     let mut app = App::new(theme);
                     app.tick = tick;
                     app.help = true;
-                    app.flash = Some(Flash { until: tick + 5, prime: tick % 2 == 0, text: "Prime block 1 (zone 2)".into() });
+                    app.flash = Some(Flash {
+                        until: tick + 5,
+                        prime: tick % 2 == 0,
+                        text: "Prime block 1 (zone 2)".into(),
+                    });
                     let mut offline = s.clone();
                     offline.node.online = tick == 0;
                     offline.node.error = Some("connection refused".into());

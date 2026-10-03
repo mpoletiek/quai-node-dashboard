@@ -25,7 +25,10 @@ mod tests {
     use super::*;
 
     fn land_at(lat: f64, lon: f64) -> bool {
-        land(((lon + 180.0) / 1.5) as usize, ((90.0 - lat) / 1.5) as usize)
+        land(
+            ((lon + 180.0) / 1.5) as usize,
+            ((90.0 - lat) / 1.5) as usize,
+        )
     }
 
     #[test]

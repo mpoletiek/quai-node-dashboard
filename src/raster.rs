@@ -75,7 +75,12 @@ impl Canvas {
         let n = ((x1 - x0).abs().max((y1 - y0).abs()) * 2.0).ceil().max(1.0) as usize;
         for i in 0..=n {
             let t = i as f64 / n as f64;
-            self.blend((x0 + (x1 - x0) * t) as i64, (y0 + (y1 - y0) * t) as i64, c, a * 0.6);
+            self.blend(
+                (x0 + (x1 - x0) * t) as i64,
+                (y0 + (y1 - y0) * t) as i64,
+                c,
+                a * 0.6,
+            );
         }
     }
 
@@ -114,7 +119,11 @@ fn crc32(data: &[u8]) -> u32 {
     for &b in data {
         c ^= u32::from(b);
         for _ in 0..8 {
-            c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+            c = if c & 1 != 0 {
+                0xEDB8_8320 ^ (c >> 1)
+            } else {
+                c >> 1
+            };
         }
     }
     !c
@@ -152,13 +161,26 @@ fn land_points() -> impl Iterator<Item = (f64, f64)> {
     (0..world::HEIGHT).flat_map(|y| {
         (0..world::WIDTH)
             .filter(move |&x| world::land(x, y))
-            .map(move |x| (90.0 - (y as f64 + 0.5) * 1.5, -180.0 + (x as f64 + 0.5) * 1.5))
+            .map(move |x| {
+                (
+                    90.0 - (y as f64 + 0.5) * 1.5,
+                    -180.0 + (x as f64 + 0.5) * 1.5,
+                )
+            })
     })
 }
 
 /// GHOST: an orthographic dot globe turned to `lon0` degrees, with arcs
 /// and travelling packets from `here` to each peer at time `t` seconds.
-pub fn globe(w: usize, h: usize, c: &MapColors, pins: &[Pin], here: Option<&Place>, lon0: f64, t: f64) -> Canvas {
+pub fn globe(
+    w: usize,
+    h: usize,
+    c: &MapColors,
+    pins: &[Pin],
+    here: Option<&Place>,
+    lon0: f64,
+    t: f64,
+) -> Canvas {
     let mut cv = Canvas::new(w, h, c.bg);
     let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
     let r = (w.min(h) as f64) * 0.44;
@@ -174,7 +196,12 @@ pub fn globe(w: usize, h: usize, c: &MapColors, pins: &[Pin], here: Option<&Plac
     cv.glow(cx, cy, r * 1.25, [10, 60, 70], 0.55);
     for i in 0..720 {
         let a = i as f64 / 720.0 * std::f64::consts::TAU;
-        cv.blend((cx + a.cos() * r) as i64, (cy + a.sin() * r) as i64, c.acc, 0.35);
+        cv.blend(
+            (cx + a.cos() * r) as i64,
+            (cy + a.sin() * r) as i64,
+            c.acc,
+            0.35,
+        );
     }
     let dot = (r / 160.0).max(0.7);
     for (la, lo) in land_points() {
@@ -190,18 +217,27 @@ pub fn globe(w: usize, h: usize, c: &MapColors, pins: &[Pin], here: Option<&Plac
             continue;
         }
         if let Some((ox, oy, _)) = origin {
-            let (mx, my) = ((x + ox) / 2.0, (y + oy) / 2.0 - ((x - ox).hypot(y - oy)) * 0.25);
+            let (mx, my) = (
+                (x + ox) / 2.0,
+                (y + oy) / 2.0 - ((x - ox).hypot(y - oy)) * 0.25,
+            );
             let mut last = (ox, oy);
             for k in 1..=24 {
                 let u = k as f64 / 24.0;
                 let iu = 1.0 - u;
-                let pt = (iu * iu * ox + 2.0 * iu * u * mx + u * u * x, iu * iu * oy + 2.0 * iu * u * my + u * u * y);
+                let pt = (
+                    iu * iu * ox + 2.0 * iu * u * mx + u * u * x,
+                    iu * iu * oy + 2.0 * iu * u * my + u * u * y,
+                );
                 cv.line(last, pt, c.acc, 0.25 * z);
                 last = pt;
             }
             let u = (t * 0.35 + i as f64 * 0.137).fract();
             let iu = 1.0 - u;
-            let pk = (iu * iu * ox + 2.0 * iu * u * mx + u * u * x, iu * iu * oy + 2.0 * iu * u * my + u * u * y);
+            let pk = (
+                iu * iu * ox + 2.0 * iu * u * mx + u * u * x,
+                iu * iu * oy + 2.0 * iu * u * my + u * u * y,
+            );
             cv.dot(pk.0, pk.1, dot * 1.6, [255, 255, 255], 0.8 * z);
         }
         let col = if p.out { c.warn } else { c.acc };
@@ -218,12 +254,24 @@ pub fn globe(w: usize, h: usize, c: &MapColors, pins: &[Pin], here: Option<&Plac
 
 /// ANGEL: an equirectangular dot map with a sweep at time `t` and square
 /// reticles on peers (larger where the sweep passes).
-pub fn flat(w: usize, h: usize, c: &MapColors, pins: &[Pin], here: Option<&Place>, t: f64) -> Canvas {
+pub fn flat(
+    w: usize,
+    h: usize,
+    c: &MapColors,
+    pins: &[Pin],
+    here: Option<&Place>,
+    t: f64,
+) -> Canvas {
     let mut cv = Canvas::new(w, h, c.bg);
     let mw = (w as f64).min(h as f64 * 2.0);
     let (mh, ox) = (mw / 2.0, (w as f64 - mw) / 2.0);
     let oy = (h as f64 - mh) / 2.0;
-    let p = |lat: f64, lon: f64| (ox + (lon + 180.0) / 360.0 * mw, oy + (90.0 - lat) / 180.0 * mh);
+    let p = |lat: f64, lon: f64| {
+        (
+            ox + (lon + 180.0) / 360.0 * mw,
+            oy + (90.0 - lat) / 180.0 * mh,
+        )
+    };
     for lon in (-150..=180).step_by(30) {
         let (x, _) = p(0.0, f64::from(lon));
         cv.line((x, oy), (x, oy + mh), c.acc, 0.18);
@@ -270,9 +318,25 @@ mod tests {
 
     #[test]
     fn png_is_well_formed() {
-        let c = MapColors { bg: [0, 0, 0], acc: [94, 246, 224], warn: [255, 195, 90], hot: [255, 61, 127] };
-        let pins = [Pin { place: Place { lat: 51.5, lon: -0.1, city: "London".into(), country: "GB".into() }, out: false }];
-        for cv in [globe(320, 200, &c, &pins, None, 0.0, 1.0), flat(320, 200, &c, &pins, None, 1.0)] {
+        let c = MapColors {
+            bg: [0, 0, 0],
+            acc: [94, 246, 224],
+            warn: [255, 195, 90],
+            hot: [255, 61, 127],
+        };
+        let pins = [Pin {
+            place: Place {
+                lat: 51.5,
+                lon: -0.1,
+                city: "London".into(),
+                country: "GB".into(),
+            },
+            out: false,
+        }];
+        for cv in [
+            globe(320, 200, &c, &pins, None, 0.0, 1.0),
+            flat(320, 200, &c, &pins, None, 1.0),
+        ] {
             let png = cv.png();
             assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
             assert!(png.len() > 100);
@@ -291,17 +355,61 @@ mod preview {
     #[test]
     #[ignore]
     fn write_previews() {
-        let Ok(dir) = std::env::var("RSQ_DASH_PREVIEW") else { return };
-        let cities = [(40.7, -74.0), (51.5, -0.1), (52.5, 13.4), (35.7, 139.7), (1.35, 103.8), (-33.9, 151.2), (-23.5, -46.6), (37.8, -122.4), (50.1, 8.7), (25.2, 55.3), (19.1, 72.9), (43.7, -79.4)];
+        let Ok(dir) = std::env::var("RSQ_DASH_PREVIEW") else {
+            return;
+        };
+        let cities = [
+            (40.7, -74.0),
+            (51.5, -0.1),
+            (52.5, 13.4),
+            (35.7, 139.7),
+            (1.35, 103.8),
+            (-33.9, 151.2),
+            (-23.5, -46.6),
+            (37.8, -122.4),
+            (50.1, 8.7),
+            (25.2, 55.3),
+            (19.1, 72.9),
+            (43.7, -79.4),
+        ];
         let pins: Vec<Pin> = cities
             .iter()
             .enumerate()
-            .map(|(i, &(lat, lon))| Pin { place: Place { lat, lon, city: String::new(), country: String::new() }, out: i % 4 == 0 })
+            .map(|(i, &(lat, lon))| Pin {
+                place: Place {
+                    lat,
+                    lon,
+                    city: String::new(),
+                    country: String::new(),
+                },
+                out: i % 4 == 0,
+            })
             .collect();
-        let here = Place { lat: 39.1, lon: -94.6, city: String::new(), country: String::new() };
-        let ghost = MapColors { bg: [2, 7, 11], acc: [94, 246, 224], warn: [255, 195, 90], hot: [255, 61, 127] };
-        let angel = MapColors { bg: [6, 2, 3], acc: [255, 122, 26], warn: [255, 178, 26], hot: [255, 38, 38] };
-        let _ = std::fs::write(format!("{dir}/globe.png"), globe(720, 440, &ghost, &pins, Some(&here), -60.0, 2.0).png());
-        let _ = std::fs::write(format!("{dir}/flat.png"), flat(900, 440, &angel, &pins, Some(&here), 4.0).png());
+        let here = Place {
+            lat: 39.1,
+            lon: -94.6,
+            city: String::new(),
+            country: String::new(),
+        };
+        let ghost = MapColors {
+            bg: [2, 7, 11],
+            acc: [94, 246, 224],
+            warn: [255, 195, 90],
+            hot: [255, 61, 127],
+        };
+        let angel = MapColors {
+            bg: [6, 2, 3],
+            acc: [255, 122, 26],
+            warn: [255, 178, 26],
+            hot: [255, 38, 38],
+        };
+        let _ = std::fs::write(
+            format!("{dir}/globe.png"),
+            globe(720, 440, &ghost, &pins, Some(&here), -60.0, 2.0).png(),
+        );
+        let _ = std::fs::write(
+            format!("{dir}/flat.png"),
+            flat(900, 440, &angel, &pins, Some(&here), 4.0).png(),
+        );
     }
 }
