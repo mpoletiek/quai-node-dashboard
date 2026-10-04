@@ -201,7 +201,7 @@ body[data-look="angel"] .consensus b { color: var(--ok); }
 
 /* ---------- Map ---------- */
 #mapp { grid-area: map; display: flex; flex-direction: column; min-height: 380px; }
-#map { width: 100%; flex: 1; min-height: 320px; display: block; cursor: grab; }
+#map { width: 100%; flex: 1; min-height: 320px; display: block; cursor: grab; touch-action: pan-y; }
 .mapnote { font-size: 11px; color: var(--warn); margin-top: 6px; }
 .peerstats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--fg2); }
 .peerstats b { color: var(--fg); font-size: 16px; font-weight: 400; margin-left: 4px; }
@@ -321,6 +321,35 @@ table.wt { width: 100%; border-collapse: collapse; font-size: 12px; font-variant
   .ghost-hit, .angel-banner, .titlecard { animation: fadeout 2.4s steps(1) forwards; }
   .tier.flash .n, #log .fresh { animation: none; }
 }
+
+/* ---------- Phones ---------- */
+@media (hover: none), (pointer: coarse) { .keys { display: none; } }
+@media (max-width: 720px) {
+  .top { gap: 10px 14px; }
+  /* Panel headers wrap: the aside (hash, peer counts, legend) takes its own line. */
+  .ph { flex-wrap: wrap; row-gap: 4px; }
+  .ph .aside { margin-left: 0; flex-basis: 100%; }
+  /* A canvas with no set height grows from its own drawing buffer: fix it. */
+  #mapp { min-height: 0; }
+  #map { flex: none; height: clamp(260px, 92vw, 460px); min-height: 0; }
+  /* The ANGEL map is flat (2:1): no tall empty box around it. */
+  body[data-look="angel"] #map { height: clamp(170px, 52vw, 300px); }
+  /* ANGEL triad: one full-width card per algorithm, name and hashrate on one line. */
+  body[data-look="angel"] .algos { grid-template-columns: minmax(0, 1fr); grid-template-areas: "a0" "a1" "a2" "cc"; }
+  body[data-look="angel"] .algo:nth-child(1) { width: 100%; }
+  body[data-look="angel"] .algo { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; }
+  body[data-look="angel"] .algo .hr { text-align: right; font-size: 22px; }
+  body[data-look="angel"] .algo .meta,
+  body[data-look="angel"] .algo canvas,
+  body[data-look="angel"] .algo .verdict { grid-column: 1 / 3; }
+  body[data-look="angel"] .algo .meta { gap: 12px; }
+  /* Label/value lists: labels keep their width, long values wrap. */
+  .kv { gap: 9px 14px; }
+  .kv .lbl { letter-spacing: .08em; }
+  body[data-look="angel"] .kv .lbl { font-size: 12px; }
+  .kv .v { white-space: normal; overflow-wrap: anywhere; }
+  .marow { grid-template-columns: 64px minmax(0, 1fr) auto; }
+}
 </style>
 
 <canvas id="bgfx" aria-hidden="true"></canvas>
@@ -340,7 +369,7 @@ table.wt { width: 100%; border-collapse: collapse; font-size: 12px; font-variant
       <button type="button" id="look-ghost" aria-pressed="true">GHOST</button>
       <button type="button" id="look-angel" aria-pressed="false">ANGEL</button>
     </div>
-    <span class="lbl" title="Keyboard: T switches the look, C turns the full-screen moments on or off">T look · C cinematics</span>
+    <span class="lbl keys" title="Keyboard: T switches the look, C turns the full-screen moments on or off">T look · C cinematics</span>
     <span class="clock num" id="clock">--:--:--</span>
   </header>
 
@@ -1128,10 +1157,25 @@ function drawAlgos(now) {
   }
 }
 // Map: GHOST rotates a dot globe; ANGEL draws a flat hex-dot map with reticles.
-let rotLon = -40, dragging = null;
-$("map").addEventListener("pointerdown", (e) => { dragging = { x: e.clientX, lon: rotLon }; $("map").setPointerCapture(e.pointerId); });
-$("map").addEventListener("pointermove", (e) => { if (dragging) rotLon = dragging.lon - (e.clientX - dragging.x) * 0.4; });
-$("map").addEventListener("pointerup", () => { dragging = null; });
+// Dragging spins the globe (mouse, pen or a horizontal swipe; `touch-action:
+// pan-y` leaves vertical swipes to page scrolling) and lets it coast a little.
+let rotLon = -40, dragging = null, spinV = 0;
+const coarse = matchMedia("(pointer: coarse)").matches;
+$("map").addEventListener("pointerdown", (e) => {
+  dragging = { x: e.clientX, lon: rotLon, lastX: e.clientX, lastT: performance.now() };
+  spinV = 0;
+  $("map").setPointerCapture(e.pointerId);
+});
+$("map").addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const k = coarse ? 0.6 : 0.4, now = performance.now();
+  rotLon = dragging.lon - (e.clientX - dragging.x) * k;
+  const dt = Math.max(1, now - dragging.lastT);
+  spinV = (-(e.clientX - dragging.lastX) * k) / dt * 16; // degrees per frame
+  dragging.lastX = e.clientX; dragging.lastT = now;
+});
+const endDrag = () => { if (dragging && performance.now() - dragging.lastT > 120) spinV = 0; dragging = null; };
+for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) $("map").addEventListener(ev, endDrag);
 function drawMap(now) {
   const { ctx, w, h } = sizeCanvas($("map"));
   ctx.clearRect(0, 0, w, h);
@@ -1152,6 +1196,9 @@ function drawMap(now) {
     const sx = ox + ((now / 60) % mw);
     const g = ctx.createLinearGradient(sx - 60, 0, sx, 0); g.addColorStop(0, hexA(acc, 0)); g.addColorStop(1, hexA(acc, 0.25));
     ctx.fillStyle = g; ctx.fillRect(sx - 60, oy, 60, mh);
+    const labels = [], maxLabels = mw < 480 ? 3 : 8;
+    // Room for "THIS NODE" first, so no city label lands on it.
+    if (here) { const [hx, hy] = P(here.lat, here.lon); labels.push([hx + 9, hy - 6, ctx.measureText("THIS NODE").width, 12]); }
     for (const p of peers) {
       const [x, y] = P(p.place.lat, p.place.lon);
       const near = Math.abs(x - sx) < 70;
@@ -1159,14 +1206,23 @@ function drawMap(now) {
       const r = near ? 7 : 4;
       ctx.strokeRect(x - r, y - r, r * 2, r * 2);
       ctx.beginPath(); ctx.moveTo(x - r - 4, y); ctx.lineTo(x - r, y); ctx.moveTo(x + r, y); ctx.lineTo(x + r + 4, y); ctx.stroke();
-      if (near && p.place.city) { ctx.fillStyle = css("--warn"); ctx.fillText(p.place.city.toUpperCase(), x + 10, y - 6); }
+      if (near && p.place.city && labels.length < maxLabels) {
+        const text = p.place.city.toUpperCase(), tw = ctx.measureText(text).width;
+        const box = [x + 10, y - 16, tw, 12];
+        const clash = labels.some((b) => box[0] < b[0] + b[2] + 4 && b[0] < box[0] + box[2] + 4 && box[1] < b[1] + b[3] && b[1] < box[1] + box[3]);
+        if (!clash && box[0] + tw < ox + mw) { labels.push(box); ctx.fillStyle = css("--warn"); ctx.fillText(text, box[0], y - 6); }
+      }
     }
     if (here) { const [x, y] = P(here.lat, here.lon); ctx.fillStyle = hot; ctx.beginPath(); ctx.arc(x, y, 5 + 2 * Math.sin(now / 200), 0, 7); ctx.fill(); ctx.fillText("THIS NODE", x + 9, y + 4); }
     ctx.fillStyle = hexA(acc, 0.9); ctx.font = `700 12px ${css("--label")}`; ctx.fillText("TARGETS · " + peers.length, ox + 70, oy + 14);
     return;
   }
   // GHOST globe (orthographic).
-  if (!dragging) rotLon += 0.04;
+  if (!dragging) {
+    rotLon += 0.04 + spinV;
+    spinV *= 0.94;
+    if (Math.abs(spinV) < 0.01) spinV = 0;
+  }
   const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.42, tilt = 0.32;
   const lon0 = (rotLon * Math.PI) / 180;
   const proj = (lat, lon) => {
@@ -1214,7 +1270,7 @@ function drawMap(now) {
     }
   }
   ctx.fillStyle = css("--dim"); ctx.font = `11px ${css("--mono")}`;
-  ctx.fillText("DRAG TO ROTATE", 6, h - 8);
+  ctx.fillText(coarse ? "SWIPE TO ROTATE" : "DRAG TO ROTATE", 6, h - 8);
 }
 let tapeHover = -1, tapeLayout = [];
 $("tape").addEventListener("pointermove", (e) => {
