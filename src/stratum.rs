@@ -147,6 +147,13 @@ pub fn build(api: &str, p: &Poll, mining: Option<&Mining>) -> Stratum {
         kawpow: algo_block(&s["kawpow"]),
         sha: algo_block(&s["sha256"]),
         scrypt: algo_block(&s["scrypt"]),
+        mined: s["mined"].as_object().map(|m| crate::state::StratumMined {
+            prime: u64_of(&m["prime"]),
+            region: u64_of(&m["region"]),
+            zone: u64_of(&m["zone"]),
+            workshares: u64_of(&m["workshares"]),
+            workshares_paid: u64_of(&m["worksharesPaid"]),
+        }),
         ..Default::default()
     };
     if let Some(m) = mining {
@@ -397,6 +404,20 @@ mod tests {
             go_time_ms("2026-10-03T21:57:14Z")
         );
         assert_eq!(go_time_ms("2000-02-29T00:00:00Z"), 951_782_400_000);
+    }
+
+    /// rs-quai's `mined` tally is read when present; go-quai's stats (the
+    /// `live()` fixture has none) leave it out.
+    #[test]
+    fn reads_the_mined_tally_when_reported() {
+        assert_eq!(build("x", &live(), None).mined, None);
+        let mut p = live();
+        p.stats["mined"] = serde_json::json!({"prime": 0, "region": 1, "zone": 2, "workshares": 40, "worksharesPaid": 31});
+        let m = build("x", &p, None).mined.unwrap();
+        assert_eq!(
+            (m.prime, m.region, m.zone, m.workshares, m.workshares_paid),
+            (0, 1, 2, 40, 31)
+        );
     }
 
     #[test]

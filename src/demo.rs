@@ -463,6 +463,16 @@ impl Demo {
         };
         s.onchain.by_address = by.into_values().collect();
         crate::stratum::settle(&mut s, &mut st.blocks);
+        // The node's own tally (rs-quai): a region block from before the
+        // page opened, plus whatever the demo finds.
+        let status = |k: &str| s.found.iter().filter(|f| f.status == k).count() as u64;
+        s.mined = Some(crate::state::StratumMined {
+            prime: 0,
+            region: 1,
+            zone: 2 + status("block"),
+            workshares: s.workshares_found,
+            workshares_paid: 176 + status("included"),
+        });
         for f in &mut self.found {
             if let Some(g) = s.found.iter().find(|g| g.hash == f.hash) {
                 f.status = g.status.clone();

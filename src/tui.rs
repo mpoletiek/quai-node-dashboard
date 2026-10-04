@@ -1826,6 +1826,28 @@ fn stratum_overview<'a>(p: &Pal, st: &crate::state::Stratum) -> Vec<Line<'a>> {
         ),
         Span::styled(format!(" blk / {}", oc.window), Style::new().fg(p.dim)),
     ]));
+    if let Some(m) = st.mined {
+        let n = |v: u64, c: Color| {
+            Span::styled(
+                v.to_string(),
+                Style::new()
+                    .fg(if v > 0 { c } else { p.faint })
+                    .add_modifier(Modifier::BOLD),
+            )
+        };
+        lines.push(Line::from(vec![
+            Span::styled("MINED   ", Style::new().fg(p.dim)),
+            Span::styled("P ", Style::new().fg(p.alert)),
+            n(m.prime, p.alert),
+            Span::styled(" · R ", Style::new().fg(p.purple)),
+            n(m.region, p.purple),
+            Span::styled(" · Z ", Style::new().fg(p.fg)),
+            n(m.zone, p.fg),
+            Span::styled(" blocks · paid ", Style::new().fg(p.dim)),
+            n(m.workshares_paid, p.ok),
+            Span::styled(format!("/{} ws", m.workshares), Style::new().fg(p.dim)),
+        ]));
+    }
     lines.push(if st.luck.shares == 0 {
         Line::from(vec![
             Span::styled("LUCK    ", Style::new().fg(p.dim)),

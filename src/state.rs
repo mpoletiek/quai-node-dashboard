@@ -295,6 +295,24 @@ pub struct Stratum {
     pub found: Vec<FoundShare>,
     /// What the canonical chain paid to the stratum's miners.
     pub onchain: OnChain,
+    /// What the node made of the shares handed to it since the stratum
+    /// started (rs-quai's `mined` in `/api/pool/stats`; go-quai has none).
+    pub mined: Option<StratumMined>,
+}
+
+/// Shares handed to the node, by outcome, since the stratum started.
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct StratumMined {
+    /// Prime blocks.
+    pub prime: u64,
+    /// Region blocks.
+    pub region: u64,
+    /// Zone blocks.
+    pub zone: u64,
+    /// Kept as workshares.
+    pub workshares: u64,
+    /// Workshares seen in canonical blocks.
+    pub workshares_paid: u64,
 }
 
 /// One algorithm on the stratum.
