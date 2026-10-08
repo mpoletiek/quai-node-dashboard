@@ -48,6 +48,9 @@ pub struct State {
 pub struct NodeInfo {
     /// Display name (`--label`).
     pub label: String,
+    /// Block explorer base URL for address links (`--explorer`); empty for
+    /// none.
+    pub explorer: String,
     /// Zone RPC endpoint.
     pub rpc: String,
     /// Node implementation: `rs-quai`, `go-quai` or `unknown`.

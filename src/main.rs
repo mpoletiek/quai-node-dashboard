@@ -276,6 +276,23 @@ fn print_config(
     let _ = std::io::stdout().write_all(o.as_bytes());
 }
 
+/// `--explorer` as the base the web page appends `/address/0x…` to: no
+/// trailing slash, empty for `off` or anything that is not an http(s) URL.
+fn explorer_base(v: Option<&str>) -> String {
+    let v = v
+        .unwrap_or(config::DEFAULT_EXPLORER)
+        .trim()
+        .trim_end_matches('/');
+    if v.eq_ignore_ascii_case("off") || v.is_empty() {
+        return String::new();
+    }
+    if !(v.starts_with("https://") || v.starts_with("http://")) {
+        eprintln!("quai-dash: note: --explorer {v:?} is not an http(s) URL; address links are off");
+        return String::new();
+    }
+    v.to_string()
+}
+
 /// Why the node kind is what it is.
 fn kind_how(s: &Settings, d: &Detected) -> String {
     match s.source("node_kind") {
@@ -391,6 +408,9 @@ fn run() -> Result<(), String> {
         std::thread::spawn(move || logs::follow(file, kind, s));
     }
     if demo {
+        if let Ok(mut st) = state.lock() {
+            st.node.explorer = explorer_base(s.v.explorer.as_deref());
+        }
         let s = state.clone();
         std::thread::spawn(move || demo::run(s));
     } else {
@@ -419,6 +439,7 @@ fn run() -> Result<(), String> {
         }
         let cfg = collect::Config {
             label: s.v.label.clone().unwrap_or_default(),
+            explorer: explorer_base(s.v.explorer.as_deref()),
             kind,
             kind_how: kind_how(&s, &d),
             zone,
@@ -506,5 +527,22 @@ fn main() {
     if let Err(e) = run() {
         eprintln!("quai-dash: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explorer_base;
+
+    #[test]
+    fn explorer_base_normalises_or_turns_off() {
+        assert_eq!(explorer_base(None), "https://explorer.qu.ai");
+        assert_eq!(
+            explorer_base(Some("https://orchard.qu.ai/")),
+            "https://orchard.qu.ai"
+        );
+        assert_eq!(explorer_base(Some("off")), "");
+        assert_eq!(explorer_base(Some("")), "");
+        assert_eq!(explorer_base(Some("javascript:alert(1)")), "");
     }
 }

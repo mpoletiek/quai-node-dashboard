@@ -27,6 +27,8 @@ use crate::{Graphics, Theme};
 
 /// The web dashboard's default address: this host only.
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8090";
+/// The block explorer worker addresses link to (`--explorer`).
+pub const DEFAULT_EXPLORER: &str = "https://explorer.qu.ai";
 /// The zone RPC's default.
 pub const DEFAULT_RPC: &str = "http://127.0.0.1:9200";
 
@@ -62,6 +64,11 @@ pub struct Partial {
     /// Name shown on the dashboard [default: QUAI NODE].
     #[arg(long, global = true, env = "QUAI_DASH_LABEL", value_name = "NAME")]
     pub label: Option<String>,
+    /// web: block explorer that worker and miner addresses link to, as
+    /// EXPLORER/address/ADDRESS; `off` for no links
+    /// [default: https://explorer.qu.ai].
+    #[arg(long, global = true, env = "QUAI_DASH_EXPLORER", value_name = "URL")]
+    pub explorer: Option<String>,
     /// Node implementation: detected, or forced [default: auto].
     #[arg(long, global = true, env = "QUAI_DASH_NODE_KIND", value_enum)]
     pub node_kind: Option<KindChoice>,
@@ -158,6 +165,7 @@ macro_rules! keys {
             region,
             prime,
             label,
+            explorer,
             node_kind,
             node_pid,
             logs,
@@ -183,6 +191,7 @@ impl Partial {
         Partial {
             rpc: Some(DEFAULT_RPC.into()),
             label: Some("QUAI NODE".into()),
+            explorer: Some(DEFAULT_EXPLORER.into()),
             node_kind: Some(KindChoice::Auto),
             geoip: Some(GeoMode::Auto),
             stall_secs: Some(60),

@@ -288,6 +288,8 @@ table.wt { width: 100%; border-collapse: collapse; font-size: 12px; font-variant
 .mlist { display: grid; gap: 4px; font-size: 12px; }
 .mlist div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding: 3px 0; border-top: 1px solid var(--line); }
 .mlist .a { color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.xl { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
+a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; outline: none; }
 .mlist b { font-weight: 400; color: var(--ok); } .mlist em { font-style: normal; color: var(--warn); }
 .mnote { color: var(--fg2); font-size: 13px; line-height: 1.6; max-width: 72ch; }
 .mnote code { color: var(--acc); }
@@ -776,7 +778,7 @@ class Demo {
         base_block_reward: "70.4023", estimated_block_reward: "105.3384", workshare_reward: "11.7042", quai_supply: "1124728606", avg_tx_fees: "17.4680" };
     return {
       now_ms: now,
-      node: { label: "DEMO NODE", rpc: "demo", kind: "rs-quai", kind_how: "demo", location: "Cyprus-1", chain_id: 9, online: true, error: null, log_file: "nodelogs/global.log" },
+      node: { label: "DEMO NODE", explorer: "https://explorer.qu.ai", rpc: "demo", kind: "rs-quai", kind_how: "demo", location: "Cyprus-1", chain_id: 9, online: true, error: null, log_file: "nodelogs/global.log" },
       chains: { prime: { number: this.prime, hash: "", timestamp: last.timestamp - (last.order === 0 ? 0 : 9) },
         region: { number: this.region, hash: "", timestamp: last.timestamp - (last.order <= 1 ? 0 : 4) },
         zone: { number: last.number, hash: last.hash, timestamp: last.timestamp } },
@@ -891,6 +893,7 @@ function render(s, full) {
   $("statustext").textContent = isDemo ? "DEMO DATA" : s.node.online ? "LIVE" : "OFFLINE";
   $("tuilink").hidden = !demo;
   $("nodelabel").textContent = s.node.label;
+  explorerBase = s.node.explorer || "";
   const nk = $("nodekind");
   nk.hidden = !s.node.kind;
   nk.textContent = (s.node.kind || "").toUpperCase();
@@ -969,6 +972,20 @@ function render(s, full) {
 }
 const ALGO_NAME = { kawpow: "KAWPOW", sha256: "SHA", scrypt: "SCRYPT" };
 function shortAddr(a) { return a && a.length > 14 ? a.slice(0, 8) + "…" + a.slice(-4) : a || ""; }
+// Worker and miner addresses link to the block explorer (`--explorer`;
+// empty when it is off). `html` is the already-escaped text to show.
+let explorerBase = "";
+function addrLink(addr, html) {
+  if (!explorerBase || !/^0x[0-9a-fA-F]{40}$/.test(addr || "")) return html;
+  const href = (explorerBase + "/address/" + addr).replace(/[&"<>]/g, (c) => ({ "&": "&amp;", '"': "&quot;", "<": "&lt;", ">": "&gt;" })[c]);
+  return `<a class="xl" href="${href}" target="_blank" rel="noopener noreferrer" title="${addr} on the explorer">${html}</a>`;
+}
+// "address.name" with the address part linked.
+function workerLink(w) {
+  const i = (w || "").indexOf(".");
+  const addr = i < 0 ? w : w.slice(0, i);
+  return addrLink(addr, esc(shortAddr(addr))) + (i < 0 ? "" : esc(w.slice(i)));
+}
 function shortWorker(w) { const i = w.indexOf("."); return i < 0 ? shortAddr(w) : shortAddr(w.slice(0, i)) + w.slice(i); }
 function ago(ms, now) {
   if (!ms) return "—";
@@ -1026,7 +1043,7 @@ function renderStratum(s) {
   }
   const now = s.now_ms;
   $("m-wbody").innerHTML = st.workers.length ? st.workers.map((w) =>
-    `<tr><td class="addr" title="${esc(w.address)}">${esc(shortAddr(w.address))}</td><td class="nm">${esc(w.name || "—")}</td>` +
+    `<tr><td class="addr" title="${esc(w.address)}">${addrLink(w.address, esc(shortAddr(w.address)))}</td><td class="nm">${esc(w.name || "—")}</td>` +
     `<td class="c-${esc(w.algorithm)}">${ALGO_NAME[w.algorithm] || esc(w.algorithm)}</td><td class="num">${si(w.hashrate)}</td>` +
     `<td class="num">${compactNum(w.difficulty)}</td><td class="num okc">${fmtInt(w.valid)}</td>` +
     `<td class="num${w.stale ? " warn" : ""}">${fmtInt(w.stale)}</td><td class="num${w.invalid ? " bad" : ""}">${fmtInt(w.invalid)}</td>` +
@@ -1035,11 +1052,11 @@ function renderStratum(s) {
   const pill = { block: "Block", included: "Included", pending: "Pending", unseen: "Older" };
   $("m-flist").innerHTML = st.found.length ? st.found.slice(0, 24).map((f) =>
     `<div class="fs ${f.status}"><time>${new Date(f.found_ms).toLocaleTimeString("en-GB", { hour12: false })}</time>` +
-    `<span class="pill">${pill[f.status] || f.status}</span><span class="who">${fmtInt(f.height)} · <span class="c-${esc(f.algorithm)}">${ALGO_NAME[f.algorithm] || esc(f.algorithm)}</span><small>${esc(shortWorker(f.worker))}</small></span></div>`).join("")
+    `<span class="pill">${pill[f.status] || f.status}</span><span class="who">${fmtInt(f.height)} · <span class="c-${esc(f.algorithm)}">${ALGO_NAME[f.algorithm] || esc(f.algorithm)}</span><small>${workerLink(f.worker)}</small></span></div>`).join("")
     : '<div class="empty">Shares that meet the workshare target go to the node and appear here.</div>';
   const miners = oc.by_address.slice().sort((a, b) => (b.workshares + b.blocks * 100) - (a.workshares + a.blocks * 100) || b.workers - a.workers);
   $("m-mlist").innerHTML = miners.map((a) =>
-    `<div><span class="a" title="${esc(a.address)}">${esc(shortAddr(a.address))} · ${a.workers}w · ${a.algorithms.map((x) => ALGO_NAME[x] || x).join("+")}</span><b>${a.workshares} ws</b><em>${a.blocks} blk</em></div>`).join("");
+    `<div><span class="a" title="${esc(a.address)}">${addrLink(a.address, esc(shortAddr(a.address)))} · ${a.workers}w · ${a.algorithms.map((x) => ALGO_NAME[x] || x).join("+")}</span><b>${a.workshares} ws</b><em>${a.blocks} blk</em></div>`).join("");
   $("m-foot").textContent = `Last ${oc.window} canonical blocks. Of the workshares handed to the node, ${oc.found_included} are included and ${oc.found_blocks} became blocks.`;
 }
 let logFilter = "all", paused = false;

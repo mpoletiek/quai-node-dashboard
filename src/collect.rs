@@ -23,6 +23,8 @@ use crate::stratum;
 pub struct Config {
     /// Display name.
     pub label: String,
+    /// Block explorer base URL for address links; empty for none.
+    pub explorer: String,
     /// rs-quai, go-quai or unknown.
     pub kind: NodeKind,
     /// How the kind was found.
@@ -251,6 +253,7 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
     let local = matches!(cfg.zone.host(), "127.0.0.1" | "localhost" | "::1" | "[::1]");
     if let Ok(mut st) = state.lock() {
         st.node.label = cfg.label.clone();
+        st.node.explorer = cfg.explorer.clone();
         st.node.kind = cfg.kind.name().to_string();
         st.node.kind_how = cfg.kind_how.clone();
         st.node.rpc = cfg.zone.url.clone();

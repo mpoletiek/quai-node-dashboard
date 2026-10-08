@@ -159,6 +159,7 @@ found, the log file and the geolocation source.
 | `--logs PATH` | `…_LOGS` / `logs` | detected | a log file or `nodelogs` directory; `off` |
 | `--stratum-api URL` | `…_STRATUM_API` / `stratum_api` | detected | the node's stratum API; `off` |
 | `--label NAME` | `…_LABEL` / `label` | `QUAI NODE` | name on the dashboard |
+| `--explorer URL` | `…_EXPLORER` / `explorer` | `https://explorer.qu.ai` | web: worker and miner addresses link to `URL/address/0x…`; `off` for no links |
 | `--compare [LABEL=]URL` | `…_COMPARE` / `compare` | none | a second node's zone RPC to compare blocks with |
 | `--geoip MODE` | `…_GEOIP` / `geoip` | `auto` | `auto`, `db`, `online` or `off` ([Geolocation](#geolocation)) |
 | `--geoip-db FILE` | `…_GEOIP_DB` / `geoip_db` | detected | MaxMind City database |
