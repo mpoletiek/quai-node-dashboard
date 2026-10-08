@@ -482,11 +482,24 @@ impl State {
     }
 }
 
+/// `s` as its first `head` and last `tail` characters around `…`, when it
+/// is longer than `max` characters. By characters, not bytes: miners name
+/// their workers, and a byte cut inside a character would panic.
+pub fn abbrev(s: &str, max: usize, head: usize, tail: usize) -> String {
+    let n = s.chars().count();
+    if n <= max {
+        return s.to_string();
+    }
+    let h: String = s.chars().take(head).collect();
+    let t: String = s.chars().skip(n.saturating_sub(tail)).collect();
+    format!("{h}…{t}")
+}
+
 /// `[region, zone]` → `Cyprus-1` (go-quai's location names).
 pub fn location_name(region: u64, zone: u64) -> String {
     const REGIONS: [&str; 3] = ["Cyprus", "Paxos", "Hydra"];
     match REGIONS.get(region as usize) {
-        Some(r) => format!("{r}-{}", zone + 1),
+        Some(r) => format!("{r}-{}", zone.saturating_add(1)),
         None => format!("Region{region}-Zone{zone}"),
     }
 }
@@ -496,4 +509,22 @@ pub fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outside_text_and_numbers_never_panic() {
+        assert_eq!(abbrev("0x0123456789abcdef", 14, 8, 4), "0x012345…cdef");
+        assert_eq!(abbrev("short", 14, 8, 4), "short");
+        // Multi-byte characters where a byte cut would land inside one.
+        assert_eq!(abbrev("0xé€€€€€€€€€€€€€€€é", 14, 8, 4), "0xé€€€€€…€€€é");
+        assert_eq!(
+            crate::collect::short_worker("0x€€€€€€€€€€€€€€€€€€€€.rig€"),
+            "0x€€€€€€€€…€€€€.rig€"
+        );
+        assert_eq!(location_name(0, u64::MAX), format!("Cyprus-{}", u64::MAX));
+    }
 }

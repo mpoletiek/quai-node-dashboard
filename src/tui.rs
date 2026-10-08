@@ -620,11 +620,7 @@ fn e18(dec: &str) -> String {
 }
 
 fn short_hash(h: &str) -> String {
-    if h.len() > 14 {
-        format!("{}…{}", &h[..8], &h[h.len() - 4..])
-    } else {
-        h.to_string()
-    }
+    crate::state::abbrev(h, 14, 8, 4)
 }
 
 fn utc_clock(ms: u64) -> String {
@@ -904,7 +900,18 @@ fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
 fn draw_header(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
     let now = now_ms();
-    let live = if s.node.online {
+    // The collector stamps the state every second; a state that stops
+    // moving means it is stuck (a hung lookup, say), whatever it says.
+    let stale = s.now_ms > 0 && now.saturating_sub(s.now_ms) > 10_000;
+    let live = if stale {
+        Span::styled(
+            " ◌ STALE ",
+            Style::new()
+                .fg(Color::Black)
+                .bg(p.warn)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else if s.node.online {
         Span::styled(
             " ● LIVE ",
             Style::new()
@@ -1138,12 +1145,12 @@ fn draw_chains(f: &mut Frame, app: &App, s: &State, area: Rect) {
         ("ZONE", &s.chains.zone, p.fg),
     ] {
         let (num, ago) = match head {
-            Some(h) => (thousands(h.number), age(now - h.timestamp as i64)),
+            Some(h) => (thousands(h.number), age(secs_since(now, h.timestamp))),
             None => ("—".into(), String::new()),
         };
         let pulse = head
             .as_ref()
-            .is_some_and(|h| now - (h.timestamp as i64) < 2);
+            .is_some_and(|h| secs_since(now, h.timestamp) < 2);
         lines.push(Line::from(vec![
             Span::styled(if pulse { "◆ " } else { "◇ " }, Style::new().fg(c)),
             Span::styled(
@@ -1221,7 +1228,7 @@ fn draw_chains(f: &mut Frame, app: &App, s: &State, area: Rect) {
 
 fn draw_peers(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
-    let total = (s.peers.inbound + s.peers.outbound).max(1) as f64;
+    let total = s.peers.inbound.saturating_add(s.peers.outbound).max(1) as f64;
     let w = area.width.saturating_sub(16) as f64;
     let bar = |n: u32, c: Color| -> Vec<Span<'static>> {
         let k = ((n as f64 / total) * w).round() as usize;
@@ -1727,12 +1734,13 @@ fn uptime(secs: f64) -> String {
     }
 }
 
+/// Seconds from a node's block timestamp to `now`, whatever the node says.
+fn secs_since(now: i64, ts: u64) -> i64 {
+    now.saturating_sub(i64::try_from(ts).unwrap_or(i64::MAX))
+}
+
 fn short_addr(a: &str) -> String {
-    if a.len() > 14 {
-        format!("{}…{}", &a[..8], &a[a.len() - 4..])
-    } else {
-        a.to_string()
-    }
+    crate::state::abbrev(a, 14, 8, 4)
 }
 
 /// The node's view of its stratum, or why there is none.
@@ -2166,9 +2174,12 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
                 Moment::Region => "REGION CONVERGENCE // 領域収束",
                 Moment::Mined => "BLOCK ACQUIRED // 採掘成功",
             };
-            let w = (title.chars().count() as u16 + 10)
-                .max(fl.text.len() as u16 + 6)
-                .min(area.width);
+            let cols = |t: &str, pad: u16| {
+                u16::try_from(t.chars().count())
+                    .unwrap_or(u16::MAX)
+                    .saturating_add(pad)
+            };
+            let w = cols(title, 10).max(cols(&fl.text, 6)).min(area.width);
             let r = Rect {
                 x: area.x + (area.width - w) / 2,
                 y: area.y + (area.height / 2).saturating_sub(2),
@@ -2777,6 +2788,52 @@ mod tests {
                 assert!(term.draw(|f| draw(f, &app, &s2)).is_ok());
             }
         }
+    }
+
+    #[test]
+    fn hostile_numbers_and_names_draw() {
+        let mut s = with_stratum(sample());
+        for h in [
+            &mut s.chains.prime,
+            &mut s.chains.region,
+            &mut s.chains.zone,
+        ] {
+            if let Some(h) = h.as_mut() {
+                h.timestamp = u64::MAX;
+                h.number = u64::MAX;
+            }
+        }
+        s.peers.inbound = u32::MAX;
+        s.peers.outbound = u32::MAX;
+        if let Some(st) = s.stratum.as_mut() {
+            for w in &mut st.workers {
+                w.address = "0x€€€€€€€€€€€€€€€€€€€€".into();
+                w.name = "é".repeat(300);
+            }
+        }
+        let mut app = App::new(Theme::Ghost);
+        app.tick = BOOT_TICKS + 3;
+        app.observe(&s);
+        // 65531 bytes: `len() as u16 + 6` used to overflow.
+        s.push_event(now_ms() + 10, "mined", "x".repeat(65_531), Some(1));
+        app.observe(&s);
+        let Ok(mut term) = Terminal::new(TestBackend::new(160, 48));
+        for theme in [Theme::Ghost, Theme::Angel] {
+            for view in [View::Dash, View::Logs, View::Map, View::Mining] {
+                app.theme = theme;
+                app.view = view;
+                assert!(term.draw(|f| draw(f, &app, &s)).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn stuck_state_shows_stale() {
+        let mut s = sample();
+        s.now_ms = now_ms();
+        assert!(!render_state(&s, Theme::Ghost, 160, 48, View::Dash).contains("STALE"));
+        s.now_ms = now_ms() - 30_000;
+        assert!(render_state(&s, Theme::Ghost, 160, 48, View::Dash).contains("STALE"));
     }
 
     #[test]

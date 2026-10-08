@@ -42,5 +42,9 @@ type_complexity = "allow"
 
 [profile.release]
 overflow-checks = true
+# A panic in any thread ends the process (ratatui's hook restores the
+# terminal first) and the service manager restarts it, instead of a dead
+# collector leaving the dashboard frozen on its last state.
+panic = "abort"
 lto = "thin"
 codegen-units = 1

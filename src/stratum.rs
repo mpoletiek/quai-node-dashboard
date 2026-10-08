@@ -100,8 +100,8 @@ pub fn go_time_ms(s: &str) -> u64 {
     let offset_s = match rest.as_bytes().first() {
         Some(b'+') | Some(b'-') if rest.len() >= 6 => {
             let sign = if rest.starts_with('-') { -1 } else { 1 };
-            let oh: i64 = rest[1..3].parse().unwrap_or(0);
-            let om: i64 = rest[4..6].parse().unwrap_or(0);
+            let oh: i64 = rest.get(1..3).and_then(|v| v.parse().ok()).unwrap_or(0);
+            let om: i64 = rest.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(0);
             sign * (oh * 3600 + om * 60)
         }
         _ => 0,
@@ -299,6 +299,15 @@ pub fn settle(st: &mut Stratum, blocks: &mut VecDeque<BlockInfo>) {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    #[test]
+    fn odd_offsets_do_not_panic() {
+        assert_eq!(
+            super::go_time_ms("2026-10-03T20:00:00+€:00"),
+            super::go_time_ms("2026-10-03T20:00:00Z")
+        );
+        let _ = super::go_time_ms("2026-10-03T20:00:00-0é:0");
+    }
 
     use serde_json::json;
 

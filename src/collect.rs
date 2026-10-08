@@ -223,11 +223,7 @@ fn stratum_events(seen: &mut StratumSeen, s: &crate::state::Stratum, st: &mut St
 /// `0x00051234…67Fe.gpu0` from `0x00051234AbCd…67Fe.gpu0`.
 pub fn short_worker(w: &str) -> String {
     let (addr, name) = w.split_once('.').unwrap_or((w, ""));
-    let a = if addr.len() > 14 {
-        format!("{}…{}", &addr[..10], &addr[addr.len() - 4..])
-    } else {
-        addr.to_string()
-    };
+    let a = crate::state::abbrev(addr, 14, 10, 4);
     if name.is_empty() {
         a
     } else {
@@ -276,7 +272,7 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
                 let from = if last_zone == 0 {
                     n.saturating_sub(24)
                 } else {
-                    last_zone + 1
+                    last_zone.saturating_add(1)
                 };
                 let mut fetched = Vec::new();
                 for k in from.max(n.saturating_sub(24))..=n {
@@ -302,7 +298,7 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
                             .blocks
                             .back()
                             .filter(|prev| {
-                                bi.number == prev.number + 1
+                                prev.number.checked_add(1) == Some(bi.number)
                                     && bi.parent != prev.hash
                                     && !first_fill
                             })
