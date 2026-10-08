@@ -833,13 +833,15 @@ async function poll() {
       if (!r.ok) throw new Error("HTTP " + r.status);
       s = await r.json();
       if (!s || !s.node) throw new Error("not a quai-dash server");
-      if (demo) { demo = null; lastSeq = 0; lastBlockNum = 0; firstLoad = true; $("log").replaceChildren(); toast("quai-dash server found: live data"); }
+      // Demo and live events are stamped by different clocks (this
+      // browser's and the server's), so the event cursor starts over.
+      if (demo) { demo = null; lastSeq = 0; lastEventT = 0; lastBlockNum = 0; firstLoad = true; $("log").replaceChildren(); toast("quai-dash server found: live data"); }
       fails = 0;
     } catch (e) {
       s = null;
       // A page that has never seen live data switches at once; a live
       // page rides out a few failed polls (shown as OFFLINE) first.
-      if (!demo && (++fails >= (lastState ? 5 : 1))) { demo = new Demo(); toast("No quai-dash server here: showing demo data"); }
+      if (!demo && (++fails >= (lastState ? 5 : 1))) { demo = new Demo(); lastEventT = 0; lastBlockNum = 0; toast("No quai-dash server here: showing demo data"); }
     }
   }
   if (demo) s = demo.tick();
