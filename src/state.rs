@@ -456,7 +456,8 @@ pub struct LogLine {
 
 impl State {
     /// Records an event, keeping the newest [`EVENT_HISTORY`].
-    pub fn push_event(&mut self, t_ms: u64, kind: &str, text: String, number: Option<u64>) {
+    pub fn push_event(&mut self, t_ms: u64, kind: &str, mut text: String, number: Option<u64>) {
+        clip_to(&mut text, 300);
         self.events.push_back(Event {
             t_ms,
             kind: kind.to_string(),
@@ -469,7 +470,8 @@ impl State {
     }
 
     /// Appends a log line.
-    pub fn push_log(&mut self, level: String, text: String) {
+    pub fn push_log(&mut self, level: String, mut text: String) {
+        clip_to(&mut text, crate::logs::MAX_LINE);
         self.log_seq += 1;
         self.logs.push_back(LogLine {
             seq: self.log_seq,
@@ -479,6 +481,13 @@ impl State {
         while self.logs.len() > LOG_HISTORY {
             self.logs.pop_front();
         }
+    }
+}
+
+/// Cuts `s` to at most `n` characters.
+pub fn clip_to(s: &mut String, n: usize) {
+    if let Some((i, _)) = s.char_indices().nth(n) {
+        s.truncate(i);
     }
 }
 
@@ -526,5 +535,10 @@ mod tests {
             "0x€€€€€€€€…€€€€.rig€"
         );
         assert_eq!(location_name(0, u64::MAX), format!("Cyprus-{}", u64::MAX));
+        let mut st = State::default();
+        st.push_event(0, "offline", "€".repeat(10_000), None);
+        st.push_log(String::new(), "é".repeat(100_000));
+        assert_eq!(st.events[0].text.chars().count(), 300);
+        assert_eq!(st.logs[0].text.chars().count(), crate::logs::MAX_LINE);
     }
 }

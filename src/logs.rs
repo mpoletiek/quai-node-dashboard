@@ -164,58 +164,117 @@ pub fn level_of(line: &str) -> String {
     String::new()
 }
 
+/// Longest log line kept; the rest of a longer one is dropped.
+pub const MAX_LINE: usize = 4096;
+/// Most read in one poll.
+const READ_CHUNK: u64 = 1 << 20;
+/// Further behind than this, the follower skips ahead to the last 16 KiB
+/// (only the last few hundred lines are shown anyway).
+const MAX_BEHIND: u64 = 4 << 20;
+/// Where reading starts in a file: its last 16 KiB.
+const TAIL: u64 = 16 << 10;
+
+/// Splits a byte stream into lines of at most `MAX_LINE` bytes.
+#[derive(Default)]
+struct Lines {
+    /// The line so far.
+    partial: Vec<u8>,
+    /// Dropping the rest of the current line: it was cut (too long), or
+    /// it is the first after a seek into the middle of the file.
+    skip: bool,
+}
+
+impl Lines {
+    /// Starts over; `mid_line` drops everything up to the next newline.
+    fn reset(&mut self, mid_line: bool) {
+        self.partial.clear();
+        self.skip = mid_line;
+    }
+
+    /// Feeds `buf`; returns the lines it completes (and a too-long line,
+    /// cut, as soon as it is too long).
+    fn feed(&mut self, buf: &[u8]) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut segs = buf.split(|&b| b == b'\n').peekable();
+        while let Some(seg) = segs.next() {
+            let ends = segs.peek().is_some();
+            if !self.skip {
+                let room = MAX_LINE.saturating_sub(self.partial.len());
+                self.partial.extend_from_slice(&seg[..seg.len().min(room)]);
+                if seg.len() > room {
+                    let mut l = String::from_utf8_lossy(&self.partial).into_owned();
+                    l.push('…');
+                    out.push(l);
+                    self.partial.clear();
+                    self.skip = !ends;
+                } else if ends {
+                    out.push(String::from_utf8_lossy(&self.partial).into_owned());
+                    self.partial.clear();
+                }
+            } else if ends {
+                self.skip = false;
+            }
+        }
+        out
+    }
+}
+
+/// `(device, inode)` of a file.
+fn identity(m: &std::fs::Metadata) -> (u64, u64) {
+    (m.dev(), m.ino())
+}
+
 /// Follows `path` forever, appending complete lines to the state. With
 /// `owner`, only a file that user owns is read (checked at every open,
 /// after symlinks): a detected log can't be swapped for someone else's
 /// file.
 pub fn follow(path: PathBuf, kind: NodeKind, owner: Option<u32>, state: Arc<Mutex<State>>) {
-    let mut file: Option<File> = None;
+    let mut file: Option<(File, (u64, u64))> = None;
     let mut pos = 0u64;
-    let mut partial = String::new();
+    let mut lines = Lines::default();
     loop {
         if file.is_none() {
-            let opened = File::open(&path)
-                .ok()
-                .filter(|f| owner.is_none() || f.metadata().is_ok_and(|m| Some(m.uid()) == owner));
-            if let Some(mut f) = opened {
-                // Start near the end: the last 16 KiB.
-                let len = f.metadata().map(|m| m.len()).unwrap_or(0);
-                pos = len.saturating_sub(16 * 1024);
+            let opened = File::open(&path).ok().and_then(|f| {
+                let m = f.metadata().ok()?;
+                (owner.is_none() || Some(m.uid()) == owner).then_some((f, m))
+            });
+            if let Some((mut f, m)) = opened {
+                pos = m.len().saturating_sub(TAIL);
                 if f.seek(SeekFrom::Start(pos)).is_ok() {
-                    partial.clear();
-                    if pos > 0 {
-                        partial.push('\u{0}'); // drop the first, cut line
-                    }
-                    file = Some(f);
+                    lines.reset(pos > 0);
+                    file = Some((f, identity(&m)));
                 }
             }
         }
         let mut reopen = false;
-        if let Some(f) = file.as_mut() {
+        let mut new = Vec::new();
+        if let Some((f, id)) = file.as_mut() {
             // Rotated: the path now names a shorter or different file.
-            let disk = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            if disk < pos {
-                reopen = true;
-            } else {
-                let mut buf = Vec::new();
-                if f.read_to_end(&mut buf).is_ok() && !buf.is_empty() {
-                    pos += buf.len() as u64;
-                    partial.push_str(&String::from_utf8_lossy(&buf));
-                    let mut lines: Vec<String> = partial.split('\n').map(str::to_string).collect();
-                    partial = lines.pop().unwrap_or_default();
-                    if let Ok(mut st) = state.lock() {
-                        for l in lines {
-                            if l.starts_with('\u{0}') {
-                                continue;
-                            }
-                            let text = strip_ansi(l.trim_end());
-                            if text.is_empty() {
-                                continue;
-                            }
-                            let level = level_for(kind, &text);
-                            st.push_log(level, text);
-                        }
+            match std::fs::metadata(&path) {
+                Ok(m) if identity(&m) == *id && m.len() >= pos => {
+                    if m.len() - pos > MAX_BEHIND && f.seek(SeekFrom::Start(m.len() - TAIL)).is_ok()
+                    {
+                        pos = m.len() - TAIL;
+                        lines.reset(true);
                     }
+                    let mut buf = Vec::new();
+                    if f.take(READ_CHUNK).read_to_end(&mut buf).is_ok() {
+                        pos += buf.len() as u64;
+                        new = lines.feed(&buf);
+                    }
+                }
+                _ => reopen = true,
+            }
+        }
+        if !new.is_empty() {
+            if let Ok(mut st) = state.lock() {
+                for l in new {
+                    let text = strip_ansi(l.trim_end());
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let level = level_for(kind, &text);
+                    st.push_log(level, text);
                 }
             }
         }
@@ -291,6 +350,55 @@ mod tests {
         );
         assert_eq!(parse_logrus("INFO [not a stamp] x"), None);
         assert_eq!(format_of("plain text"), NodeKind::Unknown);
+    }
+
+    #[test]
+    fn lines_are_bounded() {
+        let mut l = Lines::default();
+        assert_eq!(l.feed(b"one\ntw"), vec!["one"]);
+        assert_eq!(l.feed(b"o\nthree"), vec!["two"]);
+        // A line far over the limit, in pieces: cut once, the rest dropped.
+        let long = vec![b'x'; MAX_LINE * 3];
+        let out = l.feed(&long);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].chars().count(), MAX_LINE + 1);
+        assert!(out[0].starts_with("threexx") && out[0].ends_with('…'));
+        assert!(l.feed(&long).is_empty());
+        assert!(l.partial.is_empty());
+        assert_eq!(l.feed(b"tail\nnext\n"), vec!["next"]);
+        // Starting mid-file drops the cut first line.
+        l.reset(true);
+        assert_eq!(l.feed(b"ut line\nwhole\n"), vec!["whole"]);
+        // Invalid UTF-8 is replaced, not trusted.
+        assert_eq!(l.feed(b"\xff\xfe ok\n"), vec!["\u{fffd}\u{fffd} ok"]);
+    }
+
+    #[test]
+    fn rotation_by_replacement_is_followed() {
+        let dir = std::env::temp_dir().join(format!("quai-dash-rot-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("global.log");
+        let _ = std::fs::write(&path, "2026-10-01T17:23:03Z  INFO a: old\n");
+        let st = Arc::new(Mutex::new(State::default()));
+        let (p, s) = (path.clone(), st.clone());
+        std::thread::spawn(move || follow(p, NodeKind::RsQuai, None, s));
+        std::thread::sleep(Duration::from_millis(300));
+        // Replaced by a longer file: the old size check missed this.
+        let _ = std::fs::write(
+            dir.join("new"),
+            "2026-10-01T17:23:04Z  INFO a: new, and longer than the old one\n",
+        );
+        let _ = std::fs::rename(dir.join("new"), &path);
+        std::thread::sleep(Duration::from_millis(1000));
+        let logs: Vec<String> = st
+            .lock()
+            .map(|s| s.logs.iter().map(|l| l.text.clone()).collect())
+            .unwrap_or_default();
+        assert!(
+            logs.last().is_some_and(|l| l.contains("new, and longer")),
+            "{logs:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

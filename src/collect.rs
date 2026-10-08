@@ -269,6 +269,14 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
                         st.push_event(now, "online", "Node RPC is back".into(), None);
                     }
                 }
+                // Far below what we saw: the node resynced, or another one
+                // answers now. Start over rather than wait to catch up.
+                if last_zone != 0 && n.saturating_add(24) < last_zone {
+                    last_zone = 0;
+                    if let Ok(mut st) = state.lock() {
+                        st.blocks.clear();
+                    }
+                }
                 let from = if last_zone == 0 {
                     n.saturating_sub(24)
                 } else {
@@ -445,6 +453,10 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
                                 since_ms: *first_seen.entry(c.ip).or_insert(now),
                             })
                             .collect();
+                        // Remember only connected peers.
+                        let now_ips: std::collections::HashSet<IpAddr> =
+                            ips.iter().copied().collect();
+                        first_seen.retain(|ip, _| now_ips.contains(ip));
                         let note = list.is_empty().then(|| "no TCP peers yet".to_string());
                         (list, note)
                     }

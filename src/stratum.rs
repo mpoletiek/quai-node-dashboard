@@ -21,6 +21,9 @@ use crate::state::{
 
 /// Workshares handed to the node that are kept and tracked.
 const FOUND_KEPT: usize = 32;
+/// Workers kept (the fastest): a stratum open to anyone can have any
+/// number, and the whole list is copied every frame and every poll.
+const WORKERS_KEPT: usize = 500;
 
 /// One poll of the four endpoints.
 pub struct Poll {
@@ -52,8 +55,10 @@ fn u64_of(v: &Value) -> u64 {
     v.as_u64().unwrap_or(0)
 }
 
+/// A string the stratum reports, at most 128 characters (miners choose
+/// worker names and addresses).
 fn str_of(v: &Value) -> String {
-    v.as_str().unwrap_or("").to_string()
+    v.as_str().unwrap_or("").chars().take(128).collect()
 }
 
 /// Days since 1970-01-01 of a proleptic Gregorian date.
@@ -187,6 +192,12 @@ pub fn build(api: &str, p: &Poll, mining: Option<&Mining>) -> Stratum {
             .then(a.address.cmp(&b.address))
             .then(a.name.cmp(&b.name))
     });
+    st.miners = workers
+        .iter()
+        .map(|w| w.address.to_ascii_lowercase())
+        .collect::<std::collections::HashSet<_>>()
+        .len() as u32;
+    workers.truncate(WORKERS_KEPT);
     let mut by: BTreeMap<String, AddressPaid> = BTreeMap::new();
     for w in &workers {
         let e = by
@@ -200,7 +211,6 @@ pub fn build(api: &str, p: &Poll, mining: Option<&Mining>) -> Stratum {
             e.algorithms.push(w.algorithm.clone());
         }
     }
-    st.miners = by.len() as u32;
     st.onchain.by_address = by.into_values().collect();
     st.workers = workers;
     let sh = &p.shares;
@@ -313,6 +323,29 @@ mod tests {
 
     use super::*;
     use crate::state::Algo;
+
+    #[test]
+    fn a_crowded_stratum_is_bounded() {
+        let mut p = live();
+        let workers: Vec<Value> = (0..2000)
+            .map(|i| {
+                json!({"address": format!("0x{:040x}{}", i % 700, "€".repeat(200)),
+                    "workerName": "w".repeat(10_000), "algorithm": "kawpow", "hashrate": i})
+            })
+            .collect();
+        p.workers = Value::Array(workers);
+        let st = build("x", &p, None);
+        assert_eq!(st.workers.len(), WORKERS_KEPT);
+        assert_eq!(st.miners, 700);
+        assert!(st.onchain.by_address.len() <= WORKERS_KEPT);
+        assert!(
+            st.workers
+                .iter()
+                .all(|w| w.name.chars().count() <= 128 && w.address.chars().count() <= 128)
+        );
+        // The fastest are the ones kept.
+        assert_eq!(st.workers[0].hashrate, 1999.0);
+    }
 
     /// `/api/pool/*` from the soak node's stratum on 2026-10-03, one KawPoW
     /// GPU worker connected (public addresses only).
