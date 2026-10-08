@@ -167,9 +167,11 @@ impl Endpoint {
 }
 
 /// A TCP stream whose reads fail once `until` has passed.
-struct Deadline {
-    s: TcpStream,
-    until: Instant,
+pub(crate) struct Deadline {
+    /// The stream.
+    pub s: TcpStream,
+    /// When reads stop.
+    pub until: Instant,
 }
 
 impl Read for Deadline {

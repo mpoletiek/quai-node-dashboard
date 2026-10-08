@@ -208,6 +208,12 @@ authentication: listening on any other address shows the node's logs,
 peers and miners to everyone who can reach it, and quai-dash prints a
 warning when it does. Prefer an [SSH tunnel](#watching-a-remote-node).
 
+It answers only requests addressed to this machine (an IP address,
+`localhost`, or its hostname, bare or `.local`), so a web page you visit
+can't read the dashboard by pointing its own domain name at 127.0.0.1.
+It holds at most 16 connections, gives each 5 s to send its request,
+and answers one request per connection.
+
 ## The peer map
 
 Neither node reports peer addresses over RPC. quai-dash finds the process
