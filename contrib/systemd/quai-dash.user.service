@@ -21,6 +21,9 @@ EnvironmentFile=-%h/.config/quai-dash/env
 ExecStart=%h/.local/bin/quai-dash web $QUAI_DASH_ARGS
 Restart=on-failure
 RestartSec=5s
+# Output goes to the hidden state directory (the installer creates it).
+StandardOutput=append:%h/.local/state/quai-dash/quai-dash.log
+StandardError=append:%h/.local/state/quai-dash/quai-dash.log
 NoNewPrivileges=yes
 LockPersonality=yes
 RestrictRealtime=yes

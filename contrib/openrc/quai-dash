@@ -8,7 +8,20 @@ description="quai-dash web dashboard for a Quai node"
 
 : "${QUAI_DASH_USER:=quai-dash}"
 : "${QUAI_DASH_BIN:=/usr/local/bin/quai-dash}"
-: "${QUAI_DASH_LOG:=/var/log/quai-dash.log}"
+# Output goes to the user's hidden state directory
+# (~/.local/state/quai-dash/quai-dash.log); a user without a home, such as
+# the quai-dash system user, logs to /var/log/quai-dash.log.
+_home="$(getent passwd "${QUAI_DASH_USER}" | cut -d: -f6)"
+case "${_home}" in
+"" | / | /nonexistent) _home="" ;;
+esac
+if [ -z "${QUAI_DASH_LOG}" ]; then
+	if [ -n "${_home}" ]; then
+		QUAI_DASH_LOG="${_home}/.local/state/quai-dash/quai-dash.log"
+	else
+		QUAI_DASH_LOG="/var/log/quai-dash.log"
+	fi
+fi
 
 command="${QUAI_DASH_BIN}"
 command_args="web ${QUAI_DASH_ARGS}"
@@ -28,5 +41,19 @@ depend() {
 }
 
 start_pre() {
+	# Under the user's home, make the missing directories as that user's
+	# (start_pre runs as root); never chown a directory that already exists.
+	if [ -n "${_home}" ] && [ "${QUAI_DASH_LOG#"${_home}"/}" != "${QUAI_DASH_LOG}" ]; then
+		_group="$(id -gn "${QUAI_DASH_USER}")"
+		_dir="${QUAI_DASH_LOG%/*}"
+		_missing=""
+		while [ "${_dir}" != "${_home}" ] && [ ! -d "${_dir}" ]; do
+			_missing="${_dir} ${_missing}"
+			_dir="${_dir%/*}"
+		done
+		for _d in ${_missing}; do
+			install -d -o "${QUAI_DASH_USER}" -g "${_group}" -m 0700 "${_d}" || return 1
+		done
+	fi
 	checkpath --file --owner "${QUAI_DASH_USER}" --mode 0640 "${QUAI_DASH_LOG}"
 }

@@ -261,8 +261,16 @@ unit is hardened (`NoNewPrivileges`, `ProtectSystem=strict`,
 `ProtectHome=read-only`, `ReadOnlyPaths=/`, `PrivateTmp`, no
 capabilities, `@system-service` system calls) and still reads the
 node's logs and `/proc` and reaches the network for RPC and
-geolocation. OpenRC logs to `/var/log/quai-dash.log`; systemd to the
-journal.
+geolocation.
+
+The service's output goes to the run-as user's hidden state directory,
+`~/.local/state/quai-dash/quai-dash.log` (the installer and the OpenRC
+script create it, owned by that user). For systemd the installer writes
+the path into a drop-in, `/etc/systemd/system/quai-dash@USER.service.d/log.conf`;
+the user unit names `%h` directly. A user without a home (the dedicated
+`quai-dash` user) logs to `/var/log/quai-dash.log` under OpenRC and to
+the journal under systemd. `QUAI_DASH_LOG` in `/etc/conf.d/quai-dash`
+moves the OpenRC log elsewhere.
 
 ## Modern terminals
 
