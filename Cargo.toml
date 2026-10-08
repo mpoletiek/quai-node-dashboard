@@ -1,26 +1,46 @@
 [package]
-name = "rsq-dash"
+name = "quai-node-dashboard"
 description = "quai-dash: a live web and terminal monitor for Quai nodes (rs-quai or go-quai) over their JSON-RPC, logs and connections."
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/mpoletiek/quai-node-dashboard"
 publish = false
 
 [[bin]]
 name = "quai-dash"
 path = "src/main.rs"
 
-[lints]
-workspace = true
-
 [dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 clap = { version = "4", features = ["derive", "env"] }
 tiny_http = "0.12"
-flate2 = { workspace = true }
+flate2 = "1"
 ratatui = "0.30"
 crossterm = "0.29"
 maxminddb = "0.32"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+float_arithmetic = "deny"
+arithmetic_side_effects = "allow"
+indexing_slicing = "allow"
+collapsible_if = "allow"
+needless_range_loop = "allow"
+manual_is_multiple_of = "allow"
+should_implement_trait = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+[profile.release]
+overflow-checks = true
+lto = "thin"
+codegen-units = 1

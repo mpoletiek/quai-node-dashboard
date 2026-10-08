@@ -1,6 +1,6 @@
-# quai-dash
+# quai-node-dashboard
 
-A live monitor for a Quai node, in the browser or the terminal, with two
+`quai-dash`: a live monitor for a Quai node, in the browser or the terminal, with two
 looks: **GHOST** (cyan cyberbrain HUD, rotating dot globe) and **ANGEL**
 (orange command center: seven-segment block timer, a three-panel vote on
 the PoW algorithms, title cards for prime blocks).
@@ -11,7 +11,7 @@ directory, the node process's TCP connections (for the peer map) and,
 when the node runs a stratum, its stratum API (for the mining view).
 
 ```sh
-cargo build --release -p rsq-dash          # target/release/quai-dash
+cargo build --release                      # target/release/quai-dash
 
 # on the node's host
 quai-dash web --logs ~/node/nodelogs --listen 127.0.0.1:8095
@@ -169,3 +169,7 @@ demo data, and keeps checking for a server every 10 s.
 
 The world map is Natural Earth 110m land (public domain, via world-atlas
 2.0.2), rasterized to a 240×120 bit mask in `assets/land-240x120.bin`.
+
+## Licence
+
+MIT (see `LICENSE`). Moved out of rs-quai (`crates/rsq-dash`) with its history on 2026-10-08.
