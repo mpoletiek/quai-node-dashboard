@@ -10,6 +10,33 @@ from what both nodes already offer: their JSON-RPC, their `nodelogs`
 directory, the node process's TCP connections (for the peer map) and,
 when the node runs a stratum, its stratum API (for the mining view).
 
+## Screenshots
+
+All on demo data (`--demo`): the node, peers and miners are invented.
+
+**Web, GHOST look**
+
+![Web dashboard, GHOST look: chain heights, zone height and block timer, peer globe, proof-of-work panels and sync ratio](docs/screenshots/web-ghost.png)
+
+**Web, ANGEL look**
+
+![Web dashboard, ANGEL look: seven-segment block timer, peer map with targets and the three-panel proof-of-work vote](docs/screenshots/web-angel.png)
+
+**Web, mining view** (the node's stratum: workers, shares handed to the node, miners paid on chain; addresses link to the block explorer)
+
+![Web dashboard stratum panel: workers table, shares handed to the node and miners paid on chain](docs/screenshots/web-mining.png)
+
+**Terminal, GHOST look** (`quai-dash tui`)
+
+![Terminal dashboard, GHOST look: zone height, hierarchy, peers, merged mining, peer map, block lattice, events, stratum and node log](docs/screenshots/tui-ghost.png)
+
+**Terminal, ANGEL look** (press `t`)
+
+![Terminal dashboard, ANGEL look: block timer, proof-of-work vote, peer map, block lattice, stratum and node log](docs/screenshots/tui-angel.png)
+
+The terminal shots are frames of `quai-dash record`, played back with
+`web/tui.html`.
+
 ## Quick start
 
 On the node's host, as the node's user:
