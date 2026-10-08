@@ -1,6 +1,11 @@
-//! Peer geolocation: a local MaxMind GeoLite2/GeoIP2 City database when
-//! one is found, otherwise ip-api.com's batch endpoint (which sees the
-//! peers' IP addresses), or off.
+//! Peer geolocation: a local MaxMind GeoLite2/GeoIP2 City database,
+//! ip-api.com's batch endpoint (which sees the peers' IP addresses; only
+//! when asked for), or off.
+//!
+//! Online lookups run on their own thread: the collector hands it new
+//! addresses and picks up answers without waiting, so a slow, blocked or
+//! hostile ip-api.com never holds up the dashboard. A failed request is
+//! retried after a minute, then two, up to 30 minutes.
 //!
 //! Online lookups stay inside ip-api's free tier: one batch of at most 100
 //! addresses per request, at most [`ONLINE_PER_MINUTE`] requests a minute
@@ -9,9 +14,10 @@
 //! and every answer cached: an address is never asked about twice.
 //! Private and reserved addresses are never sent.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -25,6 +31,14 @@ pub const ONLINE_URL: &str = "http://ip-api.com/batch";
 pub const ONLINE_PER_MINUTE: usize = 15;
 /// Addresses per batch request (ip-api's maximum).
 const BATCH: usize = 100;
+/// First wait after a failed request; it doubles up to `MAX_BACKOFF`.
+const BACKOFF: Duration = Duration::from_secs(60);
+/// Longest wait between failed requests.
+const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
+/// Addresses waiting for an online answer; more are given up on.
+const QUEUE_MAX: usize = 5000;
+/// Addresses remembered; past this the cache starts over.
+const CACHE_MAX: usize = 50_000;
 
 /// Where the database is looked for when none is given.
 pub fn db_dirs() -> Vec<PathBuf> {
@@ -152,16 +166,90 @@ pub enum Geo {
     /// GeoLite2/GeoIP2 City database.
     Db(maxminddb::Reader<Vec<u8>>),
     /// ip-api.com batch lookups (sends peer IPs to ip-api.com).
-    Online(Endpoint, RateLimiter),
+    Online(Online),
+}
+
+/// The collector's end of the online lookup thread.
+pub struct Online {
+    ask: Sender<IpAddr>,
+    answers: Receiver<(IpAddr, Option<Place>)>,
+    /// Asked and not yet answered.
+    asked: HashSet<IpAddr>,
+}
+
+impl Online {
+    /// Starts the lookup thread.
+    fn spawn(ep: Endpoint, limit: RateLimiter, backoff: Duration) -> Online {
+        let (ask, asks) = channel();
+        let (tell, answers) = channel();
+        std::thread::spawn(move || lookup_thread(ep, limit, backoff, asks, tell));
+        Online {
+            ask,
+            answers,
+            asked: HashSet::new(),
+        }
+    }
+}
+
+/// Answers addresses from `asks` in batches, within the rate limit,
+/// backing off after failures, until the collector goes away.
+fn lookup_thread(
+    ep: Endpoint,
+    mut limit: RateLimiter,
+    base: Duration,
+    asks: Receiver<IpAddr>,
+    tell: Sender<(IpAddr, Option<Place>)>,
+) {
+    let mut queue: VecDeque<IpAddr> = VecDeque::new();
+    let mut retry_at = Instant::now();
+    let mut backoff = base;
+    loop {
+        if queue.is_empty() {
+            match asks.recv() {
+                Ok(ip) => queue.push_back(ip),
+                Err(_) => return,
+            }
+        }
+        while let Ok(ip) = asks.try_recv() {
+            if queue.len() < QUEUE_MAX {
+                queue.push_back(ip);
+            } else if tell.send((ip, None)).is_err() {
+                return;
+            }
+        }
+        let now = Instant::now();
+        let wait = retry_at.saturating_duration_since(now);
+        if !wait.is_zero() || !limit.try_acquire(now) {
+            std::thread::sleep(wait.clamp(Duration::from_millis(10), Duration::from_secs(1)));
+            continue;
+        }
+        let chunk: Vec<IpAddr> = queue.iter().take(BATCH).copied().collect();
+        match online_batch(&ep, &mut limit, &chunk) {
+            Ok(rows) => {
+                backoff = base;
+                for row in rows {
+                    queue.pop_front();
+                    if tell.send(row).is_err() {
+                        return;
+                    }
+                }
+            }
+            Err(_) => {
+                retry_at = Instant::now() + backoff;
+                backoff = (backoff * 2).min(MAX_BACKOFF);
+            }
+        }
+    }
 }
 
 impl Geo {
     /// ip-api.com with the free-tier limit.
     pub fn online() -> Result<Geo, String> {
-        Ok(Geo::Online(
+        Ok(Geo::Online(Online::spawn(
             Endpoint::new(ONLINE_URL, Duration::from_secs(6))?,
             RateLimiter::new(ONLINE_PER_MINUTE, Duration::from_secs(60)),
-        ))
+            BACKOFF,
+        )))
     }
 
     /// `off`, `db` or `online`.
@@ -173,9 +261,19 @@ impl Geo {
         }
     }
 
-    /// Looks up `ips` not in `cache`, filling it (failures cache as `None`;
-    /// online, what the rate limit holds back waits for a later call).
+    /// Looks up `ips` not in `cache`, filling it (failures cache as `None`).
+    /// Online, it never waits: new addresses go to the lookup thread, and
+    /// answers that have arrived since the last call are filed.
     pub fn resolve(&mut self, ips: &[IpAddr], cache: &mut HashMap<IpAddr, Option<Place>>) {
+        if cache.len() > CACHE_MAX {
+            cache.clear();
+        }
+        if let Geo::Online(o) = self {
+            while let Ok((ip, place)) = o.answers.try_recv() {
+                o.asked.remove(&ip);
+                cache.insert(ip, place);
+            }
+        }
         let mut todo: Vec<IpAddr> = Vec::new();
         for ip in ips {
             if cache.contains_key(ip) || todo.contains(ip) {
@@ -197,12 +295,9 @@ impl Geo {
                     cache.insert(ip, lookup_db(r, ip));
                 }
             }
-            Geo::Online(ep, limit) => {
-                for chunk in todo.chunks(BATCH) {
-                    if !limit.try_acquire(Instant::now()) {
-                        return;
-                    }
-                    if online_batch(ep, limit, chunk, cache).is_err() {
+            Geo::Online(o) => {
+                for ip in todo {
+                    if o.asked.insert(ip) && o.ask.send(ip).is_err() {
                         return;
                     }
                 }
@@ -211,13 +306,12 @@ impl Geo {
     }
 }
 
-/// One batch request; fills `cache` for every address it answers.
+/// One batch request; the places of the addresses it answers, in order.
 fn online_batch(
     ep: &Endpoint,
     limit: &mut RateLimiter,
     chunk: &[IpAddr],
-    cache: &mut HashMap<IpAddr, Option<Place>>,
-) -> Result<(), String> {
+) -> Result<Vec<(IpAddr, Option<Place>)>, String> {
     let body = Value::Array(
         chunk
             .iter()
@@ -241,10 +335,11 @@ fn online_batch(
     let Ok(Value::Array(rows)) = serde_json::from_slice::<Value>(&reply.body) else {
         return Err("ip-api: unexpected answer".into());
     };
-    for (ip, row) in chunk.iter().zip(rows) {
-        cache.insert(*ip, place_of(&row));
-    }
-    Ok(())
+    Ok(chunk
+        .iter()
+        .zip(rows)
+        .map(|(ip, row)| (*ip, place_of(&row)))
+        .collect())
 }
 
 /// One row of an ip-api batch answer.
@@ -252,8 +347,18 @@ fn place_of(row: &Value) -> Option<Place> {
     (row["status"] == "success").then(|| Place {
         lat: row["lat"].as_f64().unwrap_or(0.0),
         lon: row["lon"].as_f64().unwrap_or(0.0),
-        city: row["city"].as_str().unwrap_or("").to_string(),
-        country: row["countryCode"].as_str().unwrap_or("").to_string(),
+        city: row["city"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(64)
+            .collect(),
+        country: row["countryCode"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(8)
+            .collect(),
     })
 }
 
@@ -328,14 +433,106 @@ mod tests {
         assert!(l.try_acquire(t0 + s(30)));
     }
 
+    /// A fake ip-api.com: each connection gets the next of `replies`
+    /// (`None`: closed unanswered; `Some("")`: held open, silent).
+    fn fake_ip_api(
+        replies: Vec<Option<&'static str>>,
+    ) -> (Endpoint, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let h = hits.clone();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for (conn, reply) in l.incoming().zip(replies) {
+                let mut c = conn.unwrap();
+                h.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let mut buf = [0u8; 4096];
+                let _ = c.read(&mut buf);
+                match reply {
+                    Some("") => held.push(c),
+                    Some(body) => {
+                        let _ = write!(
+                            c,
+                            "HTTP/1.1 200 OK\r\nX-Rl: 14\r\nContent-Length: {}\r\n\r\n{body}",
+                            body.len()
+                        );
+                    }
+                    None => {}
+                }
+            }
+        });
+        (
+            Endpoint::new(
+                &format!("http://127.0.0.1:{port}/batch"),
+                Duration::from_secs(5),
+            )
+            .unwrap(),
+            hits,
+        )
+    }
+
+    const BERLIN: &str =
+        r#"[{"status":"success","lat":52.5,"lon":13.4,"city":"Berlin","countryCode":"DE"}]"#;
+
+    fn settle(
+        geo: &mut Geo,
+        ips: &[IpAddr],
+        cache: &mut HashMap<IpAddr, Option<Place>>,
+        until: impl Fn(&HashMap<IpAddr, Option<Place>>) -> bool,
+    ) {
+        for _ in 0..100 {
+            geo.resolve(ips, cache);
+            if until(cache) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn online_never_waits_and_retries_after_failure() {
+        let public = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+        // A server that never answers: resolve still returns at once.
+        let (ep, _) = fake_ip_api(vec![Some("")]);
+        let mut geo = Geo::Online(Online::spawn(
+            ep,
+            RateLimiter::new(15, Duration::from_secs(60)),
+            Duration::from_millis(50),
+        ));
+        let mut cache = HashMap::new();
+        let t = Instant::now();
+        for _ in 0..5 {
+            geo.resolve(&[public], &mut cache);
+        }
+        assert!(t.elapsed() < Duration::from_millis(50), "{:?}", t.elapsed());
+        assert!(cache.is_empty());
+        // Fails twice, then answers: the address is asked once and stays
+        // queued until it is answered.
+        let (ep, hits) = fake_ip_api(vec![None, None, Some(BERLIN)]);
+        let mut geo = Geo::Online(Online::spawn(
+            ep,
+            RateLimiter::new(15, Duration::from_secs(60)),
+            Duration::from_millis(50),
+        ));
+        let mut cache = HashMap::new();
+        settle(&mut geo, &[public], &mut cache, |c| c.contains_key(&public));
+        assert_eq!(
+            cache.get(&public).cloned().flatten().map(|p| p.city),
+            Some("Berlin".into())
+        );
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
     #[test]
     fn known_and_private_addresses_are_not_sent() {
-        // Unreachable endpoint: any request would fail and leave the
-        // address out of the cache.
-        let mut geo = Geo::Online(
-            Endpoint::new("http://127.0.0.1:9/batch", Duration::from_millis(50)).unwrap(),
-            RateLimiter::new(1, Duration::from_secs(60)),
-        );
+        let (ep, hits) = fake_ip_api(vec![Some(BERLIN)]);
+        let mut geo = Geo::Online(Online::spawn(
+            ep,
+            RateLimiter::new(15, Duration::from_secs(60)),
+            Duration::from_millis(50),
+        ));
         let public = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
         let lan = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 7));
         let ula = IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1));
@@ -343,10 +540,8 @@ mod tests {
         cache.insert(public, None);
         geo.resolve(&[public, lan, ula], &mut cache);
         assert_eq!(cache.len(), 3);
-        // No request was made, so the limiter's one slot is still free.
-        if let Geo::Online(_, l) = &mut geo {
-            assert!(l.try_acquire(Instant::now()));
-        }
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert!(routable(public));
         assert!(!routable(IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))));
     }

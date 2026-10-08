@@ -74,8 +74,8 @@ pub enum Graphics {
         or the config file (precedence: flag > env > file > detected > default); \
         `quai-dash config` shows what is in effect and why.\n\n\
         Peer locations come from a local GeoLite2/GeoIP2 City database when one is \
-        found, otherwise from ip-api.com, which then receives the peers' IP \
-        addresses. --geoip off turns this off."
+        found; nothing leaves the host unless you ask for --geoip online, which \
+        sends the peers' IP addresses to ip-api.com."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -193,11 +193,15 @@ fn geo_from(s: &Settings) -> Result<(Geo, String), String> {
                 // falls back to online.
                 Err(e) if s.explicit("geoip_db") => Err(e),
                 Err(e) => {
-                    eprintln!("quai-dash: {e}; using ip-api.com instead");
-                    online()
+                    eprintln!("quai-dash: {e}; peer locations are off");
+                    Ok((Geo::Off, "off (the database didn't open)".into()))
                 }
             },
-            None => online(),
+            // Peer addresses leave the host only when asked to.
+            None => Ok((
+                Geo::Off,
+                "off (no City database found; --geoip online uses ip-api.com)".into(),
+            )),
         },
     }
 }

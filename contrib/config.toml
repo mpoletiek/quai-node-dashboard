@@ -30,7 +30,8 @@
 
 # Peer locations: "auto" uses a GeoLite2/GeoIP2 City database if one is
 # found (/usr/share/GeoIP, /var/lib/GeoIP, ~/.local/share/GeoIP), else
-# ip-api.com, which receives the peers' IP addresses. "off" disables it.
+# none. "online" uses ip-api.com, which receives the peers' IP addresses.
+# "off" disables it.
 # geoip = "auto"                        # auto | db | online | off
 # geoip_db = "/var/lib/GeoIP/GeoLite2-City.mmdb"
 

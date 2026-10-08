@@ -36,7 +36,7 @@ pub const DEFAULT_RPC: &str = "http://127.0.0.1:9200";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GeoMode {
-    /// A local GeoLite2/GeoIP2 City database if one is found, else online.
+    /// A local GeoLite2/GeoIP2 City database if one is found, else off.
     Auto,
     /// The local database only.
     Db,
@@ -92,7 +92,7 @@ pub struct Partial {
         value_name = "[LABEL=]URL"
     )]
     pub compare: Option<String>,
-    /// Peer locations: a local City database if found, else ip-api.com
+    /// Peer locations: a local City database if found, else none
     /// (`auto`); `db`; `online` (sends peer IP addresses to ip-api.com);
     /// or `off` [default: auto].
     #[arg(long, global = true, env = "QUAI_DASH_GEOIP", value_enum)]

@@ -49,8 +49,8 @@ quai-dash config                           # what it found, and why
 ```
 
 No flags needed: quai-dash finds the node on the zone RPC port, tells
-rs-quai from go-quai, follows its logs, maps its peers (located by
-default, see [Geolocation](#geolocation)) and, if the node runs a
+rs-quai from go-quai, follows its logs, maps its peers (placed on the
+map with a local GeoIP database, see [Geolocation](#geolocation)) and, if the node runs a
 stratum, shows its miners. Everything it detects can be overridden, and
 every option can live in a [config file](#configuration).
 
@@ -145,7 +145,7 @@ the startup line:
 
 ```text
 quai-dash: rs-quai node (process rs-quai (pid 163342)) at http://127.0.0.1:9200
-quai-dash: logs /home/node/nodelogs/global.log · stratum http://127.0.0.1:3336 · geo online (ip-api.com: …)
+quai-dash: logs /home/node/nodelogs/global.log · stratum http://127.0.0.1:3336 · geo db /usr/share/GeoIP/GeoLite2-City.mmdb
 ```
 
 Reading another user's process needs that user (or root): quai-dash
@@ -231,7 +231,8 @@ changes to the node.
 
 ## Geolocation
 
-Peers are placed on the map by default (`--geoip auto`):
+By default (`--geoip auto`) peers are placed on the map only from a
+local database, and nothing about them leaves the host:
 
 - **Local database**, when found: a MaxMind GeoLite2 or GeoIP2 City
   database (`GeoLite2-City.mmdb`, `GeoIP2-City.mmdb`, or another
@@ -239,16 +240,20 @@ Peers are placed on the map by default (`--geoip auto`):
   `$XDG_DATA_HOME/GeoIP` or `~/.local/share/GeoIP`, or `--geoip-db FILE`.
   Lookups stay on the host. GeoLite2-City is free from MaxMind with an
   account (Gentoo: `net-misc/geoipupdate`; Debian: `geoipupdate`).
-- **Otherwise ip-api.com.** **This sends your peers' IP addresses to
-  ip-api.com**, over plain HTTP (its free tier has no HTTPS). quai-dash
+- **Without one, no locations** (the globe shows the peer count as an
+  orbit), unless you ask for ip-api.com.
+- **`--geoip online`: ip-api.com.** **This sends your peers' IP
+  addresses to ip-api.com**, over plain HTTP (its free tier has no
+  HTTPS). Lookups run on their own thread, so a slow or unreachable
+  ip-api.com never holds up the dashboard; a failed request is retried
+  after a minute, then two, up to 30 minutes. quai-dash
   keeps within the free tier: the batch endpoint, at most 100 addresses
   a request and 15 requests a minute, a pause when the service says the
   window is spent (`X-Rl: 0`, or HTTP 429), and every answer cached, so
   an address is asked about once. Private and reserved addresses are
   never sent.
-- `--geoip db` uses only the database (an error without one),
-  `--geoip online` only ip-api.com, and **`--geoip off`** turns
-  locations off (the globe then shows the peer count as an orbit).
+- `--geoip db` uses only the database (an error without one), and
+  `--geoip off` turns locations off even with one.
 
 ## Running as a service
 
