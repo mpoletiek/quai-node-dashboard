@@ -42,11 +42,15 @@ The terminal shots are frames of `quai-dash record`, played back with
 On the node's host, as the node's user:
 
 ```sh
-cargo build --release                      # target/release/quai-dash
+cargo install --path .                     # builds quai-dash into ~/.cargo/bin
 quai-dash web                              # then open http://127.0.0.1:8090/
 quai-dash tui                              # or the terminal version
 quai-dash config                           # what it found, and why
 ```
+
+Or `cargo build --release` and run `./target/release/quai-dash` from the
+checkout. The toolchain is pinned in `rust-toolchain.toml` (rustup
+fetches it).
 
 No flags needed: quai-dash finds the node on the zone RPC port, tells
 rs-quai from go-quai, follows its logs, maps its peers (placed on the
@@ -375,7 +379,7 @@ state stops moving it says STALE (the TUI does the same).
 The world map is Natural Earth 110m land (public domain, via world-atlas
 2.0.2), rasterized to a 240×120 bit mask in `assets/land-240x120.bin`.
 
-## Licence
+## License
 
 MIT (see `LICENSE`). The fonts in `web/fonts` (Barlow Condensed, Chakra
 Petch, Share Tech Mono, Shippori Mincho B1, Noto Sans JP, JetBrains

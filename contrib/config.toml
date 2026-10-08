@@ -25,7 +25,7 @@
 # label = "QUAI NODE"
 # explorer = "https://explorer.qu.ai"   # worker addresses link here; "off"
 # compare = "GO-QUAI=http://10.0.0.12:9200"   # check blocks against a second node
-# here = "50.1,8.7"                   # this node on the map (LAT,LON)
+# here = "50.1,8.7"                     # this node on the map (LAT,LON)
 # stall_secs = 60
 
 # Peer locations: "auto" uses a GeoLite2/GeoIP2 City database if one is
