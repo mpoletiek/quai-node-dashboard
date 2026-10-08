@@ -273,7 +273,7 @@ fn print_config(
         "Precedence: flag > QUAI_DASH_* env > config file > detected > default."
     );
     // A closed pipe (`| head`) is not an error worth a panic.
-    let _ = std::io::stdout().write_all(o.as_bytes());
+    let _ = std::io::stdout().write_all(term::printable(&o, true).as_bytes());
 }
 
 /// `--explorer` as the base the web page appends `/address/0x…` to: no
@@ -404,8 +404,14 @@ fn run() -> Result<(), String> {
         if let Ok(mut st) = state.lock() {
             st.node.log_file = Some(file.display().to_string());
         }
+        // A detected log must belong to the node's user; one you named is
+        // yours to choose.
+        let owner = detected
+            .as_ref()
+            .filter(|d| d.logs.is_some() && d.logs.as_deref() == s.v.logs.as_deref())
+            .and_then(|d| d.process.as_ref()?.uid);
         let s = state.clone();
-        std::thread::spawn(move || logs::follow(file, kind, s));
+        std::thread::spawn(move || logs::follow(file, kind, owner, s));
     }
     if demo {
         if let Ok(mut st) = state.lock() {
@@ -422,20 +428,22 @@ fn run() -> Result<(), String> {
             .as_ref()
             .filter(|_| !how.contains("pid"))
             .map_or(String::new(), |p| format!(", pid {}", p.pid));
-        eprintln!(
+        // Detection quotes other processes (names, paths): printable only.
+        let say = |line: String| eprintln!("{}", term::printable(&line, false));
+        say(format!(
             "quai-dash: {} node ({how}{pid}) at {}",
             kind.name(),
             zone.url
-        );
-        eprintln!(
+        ));
+        say(format!(
             "quai-dash: logs {} · stratum {} · geo {geo_text}",
             log_file
                 .as_ref()
                 .map_or("none".to_string(), |f| f.display().to_string()),
             stratum.as_ref().map_or("none", |e| e.url.as_str()),
-        );
+        ));
         for n in &d.notes {
-            eprintln!("quai-dash: note: {n}");
+            say(format!("quai-dash: note: {n}"));
         }
         let cfg = collect::Config {
             label: s.v.label.clone().unwrap_or_default(),
@@ -525,7 +533,7 @@ fn run() -> Result<(), String> {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("quai-dash: {e}");
+        eprintln!("quai-dash: {}", term::printable(&e, false));
         std::process::exit(1);
     }
 }

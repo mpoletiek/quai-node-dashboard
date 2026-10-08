@@ -80,7 +80,7 @@ every option can live in a [config file](#configuration).
 The mining view reads the stratum API of the node being watched
 (`--node.stratum-api-addr`, port 3336 by default; rs-quai's is a port of
 go-quai's, so both work). quai-dash uses the address on the node's
-command line, else port 3336 on the RPC host, if it answers; or set
+command line, else port 3336 on the RPC host if the node listens there; or set
 `--stratum-api URL` (`off` turns it off). The view is the node's: every miner (payout
 address) and worker (rig or miner process) connected to its stratum, on
 all three algorithms.
@@ -115,12 +115,15 @@ Started without flags, quai-dash looks for the node on this host:
 
 1. **The process.** Whoever listens on the zone RPC port (default
    127.0.0.1:9200), found through `/proc/net/tcp` and the processes'
-   socket links; failing that, a process named `rs-quai` or `go-quai`.
-   `--node-pid` picks one.
+   socket links; failing that, one of your own processes named `rs-quai`
+   or `go-quai` (anyone can name a process that). `--node-pid` picks one.
 2. **The logs.** Both nodes write `nodelogs/` in their working
    directory, so quai-dash follows `<cwd>/nodelogs` (or
    `<--global.data-dir>/nodelogs`): rs-quai's `global.log`, or
    go-quai's own zone log (`zone-R-Z.log`, from `quai_nodeLocation`).
+   Only when quai-dash can read the process, and only a directory and
+   file the node's user owns, so a node's command line or a symlink
+   can't point it at someone else's files.
 3. **The kind** (rs-quai, go-quai or unknown), strongest evidence first:
    - the process name;
    - the log layout and format: go-quai writes per-chain logs
@@ -134,7 +137,7 @@ Started without flags, quai-dash looks for the node on this host:
      rs-quai's with `content-type`. Otherwise the two are RPC-identical.
 4. **Endpoints.** Region and prime are the zone host on ports 9002 and
    9001. The stratum API is the node's `--node.stratum-api-addr`, else
-   port 3336, if it answers.
+   port 3336 if the node itself listens there.
 
 The kind picks the log file and its parser (each line's level is read
 from its own field), and shows in the header of both dashboards and on

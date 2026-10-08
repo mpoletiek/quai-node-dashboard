@@ -13,6 +13,7 @@
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -163,14 +164,20 @@ pub fn level_of(line: &str) -> String {
     String::new()
 }
 
-/// Follows `path` forever, appending complete lines to the state.
-pub fn follow(path: PathBuf, kind: NodeKind, state: Arc<Mutex<State>>) {
+/// Follows `path` forever, appending complete lines to the state. With
+/// `owner`, only a file that user owns is read (checked at every open,
+/// after symlinks): a detected log can't be swapped for someone else's
+/// file.
+pub fn follow(path: PathBuf, kind: NodeKind, owner: Option<u32>, state: Arc<Mutex<State>>) {
     let mut file: Option<File> = None;
     let mut pos = 0u64;
     let mut partial = String::new();
     loop {
         if file.is_none() {
-            if let Ok(mut f) = File::open(&path) {
+            let opened = File::open(&path)
+                .ok()
+                .filter(|f| owner.is_none() || f.metadata().is_ok_and(|m| Some(m.uid()) == owner));
+            if let Some(mut f) = opened {
                 // Start near the end: the last 16 KiB.
                 let len = f.metadata().map(|m| m.len()).unwrap_or(0);
                 pos = len.saturating_sub(16 * 1024);
@@ -284,6 +291,24 @@ mod tests {
         );
         assert_eq!(parse_logrus("INFO [not a stamp] x"), None);
         assert_eq!(format_of("plain text"), NodeKind::Unknown);
+    }
+
+    #[test]
+    fn follows_only_the_owners_file() {
+        let path = std::env::temp_dir().join(format!("quai-dash-owner-{}.log", std::process::id()));
+        let _ = std::fs::write(&path, "2026-10-01T17:23:03Z  INFO a: one\n");
+        let me = std::fs::metadata(&path).map(|m| m.uid()).ok();
+        let run = |owner: Option<u32>| {
+            let st = Arc::new(Mutex::new(State::default()));
+            let (p, s) = (path.clone(), st.clone());
+            std::thread::spawn(move || follow(p, NodeKind::RsQuai, owner, s));
+            std::thread::sleep(Duration::from_millis(300));
+            st.lock().map(|s| s.logs.len()).unwrap_or(0)
+        };
+        assert_eq!(run(me), 1);
+        assert_eq!(run(None), 1);
+        assert_eq!(run(me.map(|u| u.wrapping_add(1))), 0);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -91,15 +91,35 @@ pub fn delete_image(out: &mut impl Write, id: u32) -> std::io::Result<()> {
     out.flush()
 }
 
+/// `s` without control characters (C0, DEL and C1, so no escape
+/// sequence can start or end in it), keeping line breaks and tabs when
+/// `lines`. For text that came from outside (process names, paths, server
+/// errors) on its way to a terminal.
+pub fn printable(s: &str, lines: bool) -> String {
+    s.chars()
+        .filter(|&c| !c.is_control() || (lines && (c == '\n' || c == '\t')))
+        .collect()
+}
+
+/// Text for an OSC string: printable, one line, no `;` (the field
+/// separator), at most 200 characters.
+fn osc_text(s: &str) -> String {
+    printable(s, false)
+        .chars()
+        .map(|c| if c == ';' { ' ' } else { c })
+        .take(200)
+        .collect()
+}
+
 /// Sets the window title.
 pub fn title(out: &mut impl Write, text: &str) -> std::io::Result<()> {
-    write!(out, "\x1b]2;{}\x07", text.replace(['\x07', '\x1b'], ""))?;
+    write!(out, "\x1b]2;{}\x07", osc_text(text))?;
     out.flush()
 }
 
 /// Sends a desktop notification.
 pub fn notify(out: &mut impl Write, kind: Kind, title: &str, body: &str) -> std::io::Result<()> {
-    let clean = |s: &str| s.replace(['\x07', '\x1b', ';'], " ");
+    let clean = osc_text;
     match kind {
         Kind::Kitty => write!(
             out,
@@ -153,6 +173,30 @@ mod base64_engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outside_text_cannot_escape() {
+        let evil = "rs-quai\x1b]52;c;aGk=\x07\u{9b}2J\u{9d}0;x\u{9c}\r\nnext\tcol";
+        assert_eq!(printable(evil, false), "rs-quai]52;c;aGk=2J0;xnextcol");
+        assert_eq!(printable(evil, true), "rs-quai]52;c;aGk=2J0;x\nnext\tcol");
+        let mut out = Vec::new();
+        notify(
+            &mut out,
+            Kind::Other,
+            "t;x",
+            &format!("{evil}{}", "a".repeat(500)),
+        )
+        .ok();
+        let s = String::from_utf8(out).unwrap_or_default();
+        // One OSC 9, opened and closed by us, nothing in between.
+        let inner = &s[4..s.len() - 1];
+        assert!(s.starts_with("\x1b]9;") && s.ends_with('\x07'));
+        assert!(
+            !inner.chars().any(|c| c.is_control() || c == ';'),
+            "{inner:?}"
+        );
+        assert!(inner.chars().count() < 420);
+    }
 
     #[test]
     fn graphics_escape_is_chunked() {

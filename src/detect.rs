@@ -16,6 +16,7 @@
 //!   on the RPC host, if it answers.
 
 use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -176,6 +177,8 @@ pub struct Process {
     pub args: Vec<String>,
     /// Working directory, when readable (same user or root).
     pub cwd: Option<PathBuf>,
+    /// The user it runs as.
+    pub uid: Option<u32>,
     /// How it was found.
     pub how: String,
 }
@@ -187,18 +190,18 @@ impl Process {
     }
 
     /// Where its `nodelogs` should be: the working directory's, else the
-    /// data directory's.
+    /// data directory's. Only for a process whose working directory we
+    /// can read (so not another user's), and only a directory that
+    /// process's user owns: its command line can't point quai-dash at
+    /// someone else's files.
     pub fn logs_dir(&self) -> Option<PathBuf> {
-        let mut dirs: Vec<PathBuf> = self.cwd.iter().map(|c| c.join("nodelogs")).collect();
+        let cwd = self.cwd.as_ref()?;
+        let mut dirs = vec![cwd.join("nodelogs")];
         if let Some(d) = flag_value(&self.args, "--global.data-dir", Some("-d")) {
-            let d = PathBuf::from(d);
-            let d = match (&self.cwd, d.is_relative()) {
-                (Some(c), true) => c.join(d),
-                _ => d,
-            };
-            dirs.push(d.join("nodelogs"));
+            dirs.push(cwd.join(d).join("nodelogs"));
         }
-        dirs.into_iter().find(|d| d.is_dir())
+        dirs.into_iter()
+            .find(|d| d.is_dir() && owner(d).is_some_and(|u| Some(u) == self.uid))
     }
 
     /// The stratum API address on its command line, as a URL.
@@ -244,12 +247,21 @@ pub fn read_process(pid: u32, how: &str) -> Option<Process> {
         name,
         args,
         cwd: std::fs::read_link(dir.join("cwd")).ok(),
+        uid: owner(&dir),
         how: how.to_string(),
     })
 }
 
 /// Processes whose `comm` names a node (readable for every user).
+/// The user owning `path` (after symlinks).
+pub fn owner(path: &Path) -> Option<u32> {
+    std::fs::metadata(path).ok().map(|m| m.uid())
+}
+
+/// Node processes by name, this user's only: anyone can name a process
+/// `rs-quai`.
 fn by_name() -> Vec<u32> {
+    let me = owner(Path::new("/proc/self"));
     let mut out: Vec<u32> = std::fs::read_dir("/proc")
         .into_iter()
         .flatten()
@@ -258,6 +270,8 @@ fn by_name() -> Vec<u32> {
         .filter(|pid: &u32| {
             std::fs::read_to_string(format!("/proc/{pid}/comm"))
                 .is_ok_and(|c| kind_from_name(c.trim()) != NodeKind::Unknown)
+                && me.is_some()
+                && owner(Path::new(&format!("/proc/{pid}"))) == me
         })
         .collect();
     out.sort_unstable();
@@ -374,7 +388,20 @@ pub fn detect(g: &Given) -> Detected {
             .and_then(Process::stratum_api)
             .into_iter()
             .collect();
-        urls.push(format!("http://{}:3336", host_for_url(g.zone.host())));
+        // The default port, if the node itself listens there (any local
+        // user could otherwise answer on it); a remote node is trusted.
+        let default = format!("http://{}:3336", host_for_url(g.zone.host()));
+        if !local {
+            urls.push(default);
+        } else if Path::new("/proc").is_dir() {
+            match (peers::listener(3336), d.process.as_ref()) {
+                (Listener::Pid(pid), Some(p)) if pid == p.pid => urls.push(default),
+                (Listener::None, _) => {}
+                _ => d.notes.push(
+                    "port 3336 isn't the node's (or isn't readable): set --stratum-api to use a stratum there".into(),
+                ),
+            }
+        }
         for u in urls {
             let Ok(ep) = Endpoint::new(&u, quick) else {
                 continue;
@@ -488,6 +515,42 @@ mod tests {
         assert_eq!(kind_from_logs(&dir).map(|k| k.0), Some(NodeKind::RsQuai));
         let _ = std::fs::write(dir.join("zone-0-0.log"), "");
         assert_eq!(kind_from_logs(&dir).map(|k| k.0), Some(NodeKind::GoQuai));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn logs_only_from_a_readable_process_and_its_own_dirs() {
+        let dir = std::env::temp_dir().join(format!("quai-dash-owned-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(dir.join("nodelogs"));
+        let _ = std::fs::create_dir_all(dir.join("data/nodelogs"));
+        let me = owner(&dir);
+        let p = |cwd: Option<PathBuf>, uid, args: &[&str]| Process {
+            cwd,
+            uid,
+            args: args.iter().map(|a| a.to_string()).collect(),
+            ..Process::default()
+        };
+        assert_eq!(
+            p(Some(dir.clone()), me, &[]).logs_dir(),
+            Some(dir.join("nodelogs"))
+        );
+        // Another user's process: its cwd is unreadable, and its command
+        // line doesn't get to choose a directory.
+        let d = dir.join("data").display().to_string();
+        assert_eq!(p(None, me, &["rs-quai", "-d", &d]).logs_dir(), None);
+        // A directory its user doesn't own.
+        let other = me.map(|u| u.wrapping_add(1));
+        assert_eq!(p(Some(dir.clone()), other, &[]).logs_dir(), None);
+        let _ = std::fs::remove_dir_all(dir.join("nodelogs"));
+        assert_eq!(
+            p(
+                Some(dir.clone()),
+                me,
+                &["rs-quai", "--global.data-dir=data"]
+            )
+            .logs_dir(),
+            Some(dir.join("data/nodelogs"))
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
