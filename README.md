@@ -366,7 +366,10 @@ in a browser.
 
 `web/index.html` is a self-contained page. When no quai-dash server
 answers (for example, opened on its own), it runs on clearly labeled
-demo data, and keeps checking for a server every 10 s.
+demo data, and keeps checking for a server every 10 s. A page that has
+shown a live node never switches to demo data: when the server stops
+answering it keeps the last real state and says NO SERVER, and when the
+state stops moving it says STALE (the TUI does the same).
 
 The world map is Natural Earth 110m land (public domain, via world-atlas
 2.0.2), rasterized to a 240×120 bit mask in `assets/land-240x120.bin`.

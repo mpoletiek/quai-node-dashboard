@@ -81,8 +81,9 @@ body {
   background: repeating-linear-gradient(to bottom, rgba(255,255,255,.025) 0 1px, transparent 1px 3px); mix-blend-mode: overlay; }
 body[data-look="angel"] .scan { background: repeating-linear-gradient(to bottom, rgba(255,140,40,.03) 0 1px, transparent 1px 4px); }
 .sweep { position: fixed; left: 0; right: 0; height: 22vh; top: -22vh; pointer-events: none; z-index: 41;
-  background: linear-gradient(to bottom, transparent, var(--acc-soft), transparent); animation: sweep 9s linear infinite; opacity: .5; }
-@keyframes sweep { to { top: 110vh; } }
+  background: linear-gradient(to bottom, transparent, var(--acc-soft), transparent); animation: sweep 9s linear infinite; opacity: .5; will-change: transform; }
+/* transform, not top: moving top re-laid out and repainted the page every frame. */
+@keyframes sweep { to { transform: translateY(132vh); } }
 
 .wrap { position: relative; z-index: 1; padding-inline: var(--gut); padding-block: 14px 28px; max-width: 1680px; margin: 0 auto; }
 
@@ -518,15 +519,32 @@ function weiStr(dec, digits = 4) { // decimal wei string → Quai
   return Number(int).toLocaleString("en-US") + (digits ? "." + pad.slice(-18, -18 + digits) : "");
 }
 function gwei(dec) { if (!dec) return "—"; const n = Number(dec) / 1e9; return n >= 1000 ? (n / 1000).toFixed(2) + "k gwei" : n.toFixed(2) + " gwei"; }
-function css(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+// CSS variables change only with the look: read each once per look.
+const cssCache = new Map();
+function css(name) {
+  const k = look + name;
+  let v = cssCache.get(k);
+  if (v === undefined) { v = getComputedStyle(document.body).getPropertyValue(name).trim(); cssCache.set(k, v); }
+  return v;
+}
 function hexA(color, a) { // #rrggbb → rgba
   const c = color.replace("#", "");
   if (c.length !== 6) return color;
   return `rgba(${parseInt(c.slice(0, 2), 16)},${parseInt(c.slice(2, 4), 16)},${parseInt(c.slice(4, 6), 16)},${a})`;
 }
+// Canvas sizes, kept by a ResizeObserver: measuring every frame forced a
+// layout every frame.
+const cvRect = new Map();
+const cvObserver = new ResizeObserver((es) => {
+  for (const e of es) {
+    const b = e.borderBoxSize && e.borderBoxSize[0];
+    cvRect.set(e.target, b ? { width: b.inlineSize, height: b.blockSize } : e.target.getBoundingClientRect());
+  }
+});
 function sizeCanvas(cv) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const r = cv.getBoundingClientRect();
+  let r = cvRect.get(cv);
+  if (!r) { r = cv.getBoundingClientRect(); cvRect.set(cv, r); cvObserver.observe(cv); }
   const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   const ctx = cv.getContext("2d");
@@ -560,6 +578,15 @@ const LAND = (() => {
 })();
 const LAND_PTS = [];
 for (let y = 0; y < LAND_H; y++) for (let x = 0; x < LAND_W; x++) if (LAND[y * LAND_W + x]) LAND_PTS.push([90 - (y + 0.5) * 1.5, -180 + (x + 0.5) * 1.5]);
+// For the globe: cos and sin of each latitude, longitude in radians.
+const LAND_TRIG = new Float64Array(LAND_PTS.length * 3);
+LAND_PTS.forEach(([la, lo], i) => { const r = (la * Math.PI) / 180; LAND_TRIG.set([Math.cos(r), Math.sin(r), (lo * Math.PI) / 180], i * 3); });
+// Land dots by brightness (8 levels): one fillStyle per level, not per dot.
+const LAND_LEVELS = 8;
+const landXY = Array.from({ length: LAND_LEVELS }, () => new Float32Array(LAND_PTS.length * 2));
+const landN = new Uint32Array(LAND_LEVELS);
+// The flat map's land, drawn once per size and colour.
+let flatLand = null, flatLandKey = "";
 
 // ---------------------------------------------------------------- look
 let look = ["#ghost", "#angel"].includes(location.hash) ? location.hash.slice(1) : store.get("quaidive.look", "ghost");
@@ -634,9 +661,9 @@ function banner(kind, title, sub) {
   const el = document.createElement("div");
   el.className = "banner";
   if (look === "ghost") {
-    el.innerHTML = `<div class="ghost-hit${kind === "mined" ? " okc" : kind === "region" ? " reg" : ""}">${title}<small>${sub}</small></div>`;
+    el.innerHTML = `<div class="ghost-hit${kind === "mined" ? " okc" : kind === "region" ? " reg" : ""}">${esc(title)}<small>${esc(sub)}</small></div>`;
   } else {
-    el.innerHTML = `<div class="angel-banner"><div class="${kind === "region" ? "amber" : kind === "mined" ? "okc" : ""}">${title}</div></div>`;
+    el.innerHTML = `<div class="angel-banner"><div class="${kind === "region" ? "amber" : kind === "mined" ? "okc" : ""}">${esc(title)}</div></div>`;
   }
   host.replaceChildren(el);
   setTimeout(() => el.remove(), 2800);
@@ -645,7 +672,7 @@ function titleCard(kind, lines) {
   if (!cinematics || !cineTake(kind, 3300)) return;
   const el = document.createElement("div");
   el.className = "titlecard";
-  el.innerHTML = `<div class="ep">${lines[0]}</div><div class="big">${lines[1]}</div><div class="sub">${lines[2]}</div>`;
+  el.innerHTML = `<div class="ep">${esc(lines[0])}</div><div class="big">${esc(lines[1])}</div><div class="sub">${esc(lines[2])}</div>`;
   $("cine").replaceChildren(el);
   setTimeout(() => el.remove(), 3300);
 }
@@ -839,6 +866,8 @@ Demo.prototype.stratum = function (now, mining) {
 
 // ---------------------------------------------------------------- state & polling
 let lastState = null, demo = null, fails = 0, lastSeq = 0, lastEventT = 0, firstLoad = true, lastBlockNum = 0;
+// When the server's clock last moved: a state that stops moving is stale.
+let serverNow = 0, serverNowAt = 0;
 let pollAt = performance.now();
 const hist = { kawpow: [], sha: [], scrypt: [] };
 let polls = 0;
@@ -848,7 +877,7 @@ async function poll() {
   // Live first; while on demo data, look for a server every 10 s.
   if (!demo || polls % 10 === 0) {
     try {
-      const r = await fetch("api/state", { cache: "no-store" });
+      const r = await fetch("api/state", { cache: "no-store", signal: AbortSignal.timeout(4000) });
       if (!r.ok) throw new Error("HTTP " + r.status);
       s = await r.json();
       if (!s || !s.node) throw new Error("not a quai-dash server");
@@ -858,9 +887,12 @@ async function poll() {
       fails = 0;
     } catch (e) {
       s = null;
-      // A page that has never seen live data switches at once; a live
-      // page rides out a few failed polls (shown as OFFLINE) first.
-      if (!demo && (++fails >= (lastState ? 5 : 1))) { demo = new Demo(); lastEventT = 0; lastBlockNum = 0; toast("No quai-dash server here: showing demo data"); }
+      fails++;
+      // A page that has never seen live data shows demo data; a live page
+      // keeps its last real state and says the server is gone, never
+      // invented numbers.
+      if (!demo && !lastState) { demo = new Demo(); lastEventT = 0; lastBlockNum = 0; toast("No quai-dash server here: showing demo data"); }
+      else if (!demo && lastState) renderStatus(lastState);
     }
   }
   if (demo) s = demo.tick();
@@ -868,6 +900,7 @@ async function poll() {
 }
 function ingest(s) {
   pollAt = performance.now();
+  if (s.now_ms !== serverNow) { serverNow = s.now_ms; serverNowAt = pollAt; }
   // History for the hashrate sparklines.
   if (s.mining) for (const k of ["kawpow", "sha", "scrypt"]) { hist[k].push(s.mining[k].hashrate); if (hist[k].length > 90) hist[k].shift(); }
   // New blocks → pulses.
@@ -876,23 +909,34 @@ function ingest(s) {
   lastBlockNum = top;
   // New events → cinematics (never on the first load).
   for (const ev of s.events) {
-    if (ev.t_ms > lastEventT) { if (!firstLoad) onEvent(ev); }
+    if (ev.t_ms > lastEventT) { if (!firstLoad && !document.hidden) onEvent(ev); }
   }
   if (s.events.length) lastEventT = Math.max(lastEventT, s.events[s.events.length - 1].t_ms);
   lastState = s;
-  render(s, false);
+  // A hidden tab keeps the data current but builds no DOM.
+  if (!document.hidden) render(s, false);
   firstLoad = false;
 }
+document.addEventListener("visibilitychange", () => { if (!document.hidden && lastState) render(lastState, true); });
 let pulse = 0, pulseOrder = 2;
 function onNewBlock(b) { pulse = performance.now(); pulseOrder = b.order; }
 
 // ---------------------------------------------------------------- render (DOM)
-function render(s, full) {
+// LIVE, or why not: the node is down, the server stopped answering, or
+// the server answers with a state that stopped moving.
+function renderStatus(s) {
   const st = $("status");
-  st.classList.toggle("off", !s.node.online);
   const isDemo = !!demo || s.node.rpc === "demo";
+  const gone = !demo && fails >= 3;
+  const stale = !isDemo && !gone && performance.now() - serverNowAt > 10000;
+  const live = isDemo || (s.node.online && !gone && !stale);
+  st.classList.toggle("off", !live);
   st.classList.toggle("demo", isDemo);
-  $("statustext").textContent = isDemo ? "DEMO DATA" : s.node.online ? "LIVE" : "OFFLINE";
+  $("statustext").textContent = isDemo ? "DEMO DATA" : gone ? "NO SERVER" : stale ? "STALE" : s.node.online ? "LIVE" : "OFFLINE";
+}
+function render(s, full) {
+  renderStatus(s);
+  const isDemo = !!demo || s.node.rpc === "demo";
   $("tuilink").hidden = !demo;
   $("nodelabel").textContent = s.node.label;
   explorerBase = s.node.explorer || "";
@@ -954,7 +998,7 @@ function render(s, full) {
     $("syncbig").textContent = c.compared ? pct.toFixed(1) + "%" : "—";
     $("syncbig").style.color = pct >= 100 ? "var(--ok)" : "var(--bad)";
     $("syncbar").style.width = pct + "%";
-    $("syncsub").innerHTML = `<span>vs <b>${c.label}</b> · ${c.online ? "height " + fmtInt(c.height) : "offline"}</span><span>${c.matched}/${c.compared} recent blocks identical</span>` +
+    $("syncsub").innerHTML = `<span>vs <b>${esc(c.label)}</b> · ${c.online ? "height " + fmtInt(c.height) : "offline"}</span><span>${c.matched}/${c.compared} recent blocks identical</span>` +
       (c.last_mismatch ? `<span style="color:var(--bad)">last mismatch at ${fmtInt(c.last_mismatch)}</span>` : "");
   } else {
     const avg = m ? m.avg_block_time : 0;
@@ -1053,17 +1097,19 @@ function renderStratum(s) {
     : '<tr><td colspan="9" class="addr">No workers connected.</td></tr>';
   const pill = { block: "Block", included: "Included", pending: "Pending", unseen: "Older" };
   $("m-flist").innerHTML = st.found.length ? st.found.slice(0, 24).map((f) =>
-    `<div class="fs ${f.status}"><time>${new Date(f.found_ms).toLocaleTimeString("en-GB", { hour12: false })}</time>` +
-    `<span class="pill">${pill[f.status] || f.status}</span><span class="who">${fmtInt(f.height)} · <span class="c-${esc(f.algorithm)}">${ALGO_NAME[f.algorithm] || esc(f.algorithm)}</span><small>${workerLink(f.worker)}</small></span></div>`).join("")
+    `<div class="fs ${esc(f.status)}"><time>${new Date(f.found_ms).toLocaleTimeString("en-GB", { hour12: false })}</time>` +
+    `<span class="pill">${pill[f.status] || esc(f.status)}</span><span class="who">${fmtInt(f.height)} · <span class="c-${esc(f.algorithm)}">${ALGO_NAME[f.algorithm] || esc(f.algorithm)}</span><small>${workerLink(f.worker)}</small></span></div>`).join("")
     : '<div class="empty">Shares that meet the workshare target go to the node and appear here.</div>';
   const miners = oc.by_address.slice().sort((a, b) => (b.workshares + b.blocks * 100) - (a.workshares + a.blocks * 100) || b.workers - a.workers);
   $("m-mlist").innerHTML = miners.map((a) =>
-    `<div><span class="a" title="${esc(a.address)}">${addrLink(a.address, esc(shortAddr(a.address)))} · ${a.workers}w · ${a.algorithms.map((x) => ALGO_NAME[x] || x).join("+")}</span><b>${a.workshares} ws</b><em>${a.blocks} blk</em></div>`).join("");
+    `<div><span class="a" title="${esc(a.address)}">${addrLink(a.address, esc(shortAddr(a.address)))} · ${a.workers}w · ${a.algorithms.map((x) => ALGO_NAME[x] || esc(x)).join("+")}</span><b>${a.workshares} ws</b><em>${a.blocks} blk</em></div>`).join("");
   $("m-foot").textContent = `Last ${oc.window} canonical blocks. Of the workshares handed to the node, ${oc.found_included} are included and ${oc.found_blocks} became blocks.`;
 }
 let logFilter = "all", paused = false;
 const HL = /(Appended new block|Workshare accepted|prime|region|reorg|Reorging|peers=\d+|number=\d+)/gi;
-function esc(t) { return t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]); }
+// Escapes text for HTML content and attribute values: everything a
+// server, node or miner wrote goes through here before innerHTML.
+function esc(t) { return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
 function appendLogs(lines) {
   const box = $("log");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
@@ -1092,7 +1138,7 @@ function renderEvents(evs) {
   if (!evs.length) { box.innerHTML = '<div class="empty">Prime and region blocks, reorgs, stalls and mismatches appear here.</div>'; return; }
   box.innerHTML = evs.slice(-40).reverse().map((e) => {
     const t = new Date(e.t_ms).toLocaleTimeString("en-GB", { hour12: false });
-    return `<div class="ev ${e.kind}"><time>${t}</time><span>${esc(e.text)}</span></div>`;
+    return `<div class="ev ${esc(e.kind)}"><time>${t}</time><span>${esc(e.text)}</span></div>`;
   }).join("");
 }
 
@@ -1241,9 +1287,17 @@ function drawMap(now) {
     ctx.fillStyle = hexA(acc, 0.7); ctx.font = `600 10px ${css("--label")}`;
     for (let lon = -150; lon <= 180; lon += 30) { const [x] = P(0, lon); ctx.beginPath(); ctx.moveTo(x, oy); ctx.lineTo(x, oy + mh); ctx.stroke(); }
     for (let lat = -60; lat <= 60; lat += 30) { const [, y] = P(lat, 0); ctx.beginPath(); ctx.moveTo(ox, y); ctx.lineTo(ox + mw, y); ctx.stroke(); ctx.fillText((lat > 0 ? "N" : lat < 0 ? "S" : "") + Math.abs(lat), ox + 3, y - 3); }
-    const cell = mw / LAND_W;
-    ctx.fillStyle = hexA(acc, 0.38);
-    for (let i = 0; i < LAND_PTS.length; i += 1) { const [la, lo] = LAND_PTS[i]; const [x, y] = P(la, lo); if (((x / cell) | 0) % 2 === 0 && ((y / cell) | 0) % 2 === 0) ctx.fillRect(x, y, Math.max(1.2, cell * 1.3), Math.max(1.2, cell * 1.3)); }
+    const cell = mw / LAND_W, dpr = Math.min(window.devicePixelRatio || 1, 2), key = [w, h, dpr, acc].join("|");
+    if (key !== flatLandKey) {
+      flatLandKey = key;
+      flatLand = document.createElement("canvas");
+      flatLand.width = Math.max(1, Math.round(w * dpr)); flatLand.height = Math.max(1, Math.round(h * dpr));
+      const lc = flatLand.getContext("2d");
+      lc.setTransform(dpr, 0, 0, dpr, 0, 0);
+      lc.fillStyle = hexA(acc, 0.38);
+      for (let i = 0; i < LAND_PTS.length; i += 1) { const [la, lo] = LAND_PTS[i]; const [x, y] = P(la, lo); if (((x / cell) | 0) % 2 === 0 && ((y / cell) | 0) % 2 === 0) lc.fillRect(x, y, Math.max(1.2, cell * 1.3), Math.max(1.2, cell * 1.3)); }
+    }
+    ctx.drawImage(flatLand, 0, 0, w, h);
     // sweep
     const sx = ox + ((now / 60) % mw);
     const g = ctx.createLinearGradient(sx - 60, 0, sx, 0); g.addColorStop(0, hexA(acc, 0)); g.addColorStop(1, hexA(acc, 0.25));
@@ -1289,11 +1343,21 @@ function drawMap(now) {
   ctx.strokeStyle = hexA(acc, 0.3); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
   ctx.strokeStyle = hexA(acc, 0.07);
   for (let lat = -60; lat <= 60; lat += 30) { ctx.beginPath(); let started = false; for (let lon = -180; lon <= 180; lon += 6) { const [x, y, z] = proj(lat, lon); if (z < 0) { started = false; continue; } started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true; } ctx.stroke(); }
-  for (const [la, lo] of LAND_PTS) {
-    const [x, y, z] = proj(la, lo);
+  const ct = Math.cos(tilt), st = Math.sin(tilt);
+  landN.fill(0);
+  for (let i = 0; i < LAND_TRIG.length; i += 3) {
+    const cl = LAND_TRIG[i], lo = LAND_TRIG[i + 2] - lon0;
+    const z0 = cl * Math.cos(lo), y0 = LAND_TRIG[i + 1];
+    const z = y0 * st + z0 * ct;
     if (z <= 0) continue;
-    ctx.fillStyle = hexA(acc, 0.12 + 0.55 * z);
-    ctx.fillRect(x, y, 1.6, 1.6);
+    const k = Math.min(LAND_LEVELS - 1, (z * LAND_LEVELS) | 0), n = landN[k];
+    landXY[k][n] = cx + cl * Math.sin(lo) * R; landXY[k][n + 1] = cy - (y0 * ct - z0 * st) * R;
+    landN[k] = n + 2;
+  }
+  for (let k = 0; k < LAND_LEVELS; k++) {
+    ctx.fillStyle = hexA(acc, 0.12 + 0.55 * (k + 0.5) / LAND_LEVELS);
+    const xy = landXY[k];
+    for (let j = 0; j < landN[k]; j += 2) ctx.fillRect(xy[j], xy[j + 1], 1.6, 1.6);
   }
   const origin = here ? proj(here.lat, here.lon) : null;
   const t = now / 1000;
@@ -1447,20 +1511,35 @@ function drawTape(now) {
 }
 
 // ---------------------------------------------------------------- loop
+// At most 30 frames a second (4 with reduced motion): smooth enough, and a
+// page left open on the node's host costs a fraction of a 60-144 Hz loop.
+const FRAME_MS = reduceMotion ? 250 : 1000 / 30;
+let lastFrame = -Infinity;
+const ageBars = {};
 function frame(now) {
-  drawTimer(now); drawSpark(); drawAlgos(now); drawMap(now); drawTape(now);
-  // Age bars and clock.
-  if (lastState) {
-    const avg = { prime: 25, region: 10, zone: 5 };
-    const nowS = lastState.now_ms / 1000 + (performance.now() - pollAt) / 1000;
-    for (const t of ["prime", "region", "zone"]) {
-      const c = lastState.chains[t];
-      const age = c ? Math.max(0, nowS - c.timestamp) : 0;
-      $("tier-" + t).querySelector(".age i").style.width = Math.min(100, (100 * age) / (avg[t] * 3)) + "%";
-    }
-  }
-  $("clock").textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
   requestAnimationFrame(frame);
+  if (now - lastFrame < FRAME_MS - 2) return;
+  lastFrame = now;
+  try {
+    drawTimer(now); drawSpark(); drawAlgos(now); drawMap(now); drawTape(now);
+    // Age bars and clock, written only when they change.
+    if (lastState) {
+      const avg = { prime: 25, region: 10, zone: 5 };
+      const nowS = lastState.now_ms / 1000 + (performance.now() - pollAt) / 1000;
+      for (const t of ["prime", "region", "zone"]) {
+        const c = lastState.chains[t];
+        const age = c ? Math.max(0, nowS - c.timestamp) : 0;
+        const bar = ageBars[t] || (ageBars[t] = $("tier-" + t).querySelector(".age i"));
+        const wv = Math.min(100, (100 * age) / (avg[t] * 3)).toFixed(1) + "%";
+        if (bar.style.width !== wv) bar.style.width = wv;
+      }
+    }
+    const clock = new Date().toLocaleTimeString("en-GB", { hour12: false });
+    if ($("clock").textContent !== clock) $("clock").textContent = clock;
+  } catch (e) {
+    // One bad frame must not stop the animation for good.
+    console.error(e);
+  }
 }
 
 // ---------------------------------------------------------------- boot
@@ -1472,7 +1551,13 @@ if (!reduceMotion) {
   document.body.appendChild(b);
   setTimeout(() => b.remove(), 3500);
 }
-poll();
-setInterval(poll, 1000);
+// Polls one at a time, a second apart: a slow server never piles up
+// requests or answers out of order.
+async function pollLoop() {
+  const t0 = performance.now();
+  try { await poll(); } catch (e) { console.error(e); }
+  setTimeout(pollLoop, Math.max(0, 1000 - (performance.now() - t0)));
+}
+pollLoop();
 requestAnimationFrame(frame);
 </script>

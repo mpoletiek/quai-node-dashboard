@@ -101,12 +101,15 @@ function caption(i) {
   const c = rec.captions.find((c) => c[0] === i);
   if (!c) return;
   const el = document.getElementById("cap");
-  el.innerHTML = `<kbd>${c[1]}</kbd>${c[2].replace(/^\S+\s+/, "")}`;
+  const k = document.createElement("kbd");
+  k.textContent = c[1];
+  el.replaceChildren(k, String(c[2]).replace(/^\S+\s+/, ""));
   el.style.opacity = 1; capUntil = performance.now() + 2600;
 }
 function tick(now) {
   if (rec && playing) {
-    acc += (now - last) * speed;
+    // A tab hidden for an hour must not replay an hour of frames at once.
+    acc = Math.min(acc + (now - last) * speed, rec.frame_ms * 4);
     while (acc >= rec.frame_ms) {
       acc -= rec.frame_ms;
       if (frame + 1 >= rec.frames.length) { frame = 0; redraw(); }
