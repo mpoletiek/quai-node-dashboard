@@ -311,6 +311,7 @@ table.wt { width: 100%; border-collapse: collapse; font-size: 12px; font-variant
 .angel-banner div.amber { color: var(--warn); }
 .angel-banner div.okc { color: var(--ok); }
 .ghost-hit.okc { color: var(--ok); text-shadow: -3px 0 var(--hot), 3px 0 #3ad1ff, 0 0 30px var(--ok); }
+.ghost-hit.reg { color: var(--tier-region); text-shadow: -3px 0 var(--hot), 3px 0 #3ad1ff, 0 0 30px var(--tier-region); }
 .titlecard { position: fixed; inset: 0; background: #000; display: grid; place-content: center; text-align: left; padding: var(--gut); animation: fadeout 3.2s ease-in forwards; }
 .titlecard .ep { font: 800 clamp(20px, 3vw, 40px)/1 var(--display); color: #fff; transform: scaleX(.8); transform-origin: left; }
 .titlecard .big { font: 800 clamp(64px, 13vw, 190px)/.92 var(--display); color: #fff; transform: scaleX(.78); transform-origin: left; letter-spacing: -.01em; }
@@ -612,22 +613,32 @@ addEventListener("resize", () => drawBg());
 
 // ---------------------------------------------------------------- cinematics
 let lastTitleCard = 0;
+// A moment does not cut off a more important one still on screen: region
+// blocks come every few seconds and would hide prime and mined moments.
+const CINE_RANK = { region: 1, prime: 2, alert: 3, mined: 3 };
+let cineRank = 0, cineUntil = 0;
+function cineTake(kind, ms) {
+  const rank = CINE_RANK[kind] || 1, now = performance.now();
+  if (now < cineUntil && rank < cineRank) return false;
+  cineRank = rank; cineUntil = now + ms;
+  return true;
+}
 function clearCine() { $("cine").replaceChildren(); }
 function banner(kind, title, sub) {
-  if (!cinematics) return;
+  if (!cinematics || !cineTake(kind, 2800)) return;
   const host = $("cine");
   const el = document.createElement("div");
   el.className = "banner";
   if (look === "ghost") {
-    el.innerHTML = `<div class="ghost-hit${kind === "mined" ? " okc" : ""}">${title}<small>${sub}</small></div>`;
+    el.innerHTML = `<div class="ghost-hit${kind === "mined" ? " okc" : kind === "region" ? " reg" : ""}">${title}<small>${sub}</small></div>`;
   } else {
     el.innerHTML = `<div class="angel-banner"><div class="${kind === "region" ? "amber" : kind === "mined" ? "okc" : ""}">${title}</div></div>`;
   }
   host.replaceChildren(el);
   setTimeout(() => el.remove(), 2800);
 }
-function titleCard(lines) {
-  if (!cinematics) return;
+function titleCard(kind, lines) {
+  if (!cinematics || !cineTake(kind, 3300)) return;
   const el = document.createElement("div");
   el.className = "titlecard";
   el.innerHTML = `<div class="ep">${lines[0]}</div><div class="big">${lines[1]}</div><div class="sub">${lines[2]}</div>`;
@@ -646,7 +657,7 @@ function onEvent(ev) {
     const num = n ? Number(n[1]).toLocaleString("en-US") : "";
     if (look === "angel" && performance.now() - lastTitleCard > 90000) {
       lastTitleCard = performance.now();
-      titleCard(["第 " + num + " 話", "PRIME", "主鎖到達 · zone " + (ev.number || "").toLocaleString("en-US")]);
+      titleCard("prime", ["第 " + num + " 話", "PRIME", "主鎖到達 · zone " + (ev.number || "").toLocaleString("en-US")]);
     } else if (look === "angel") {
       banner("prime", "PATTERN PRIME", "");
     } else {
@@ -654,9 +665,13 @@ function onEvent(ev) {
     }
     flashTier("prime");
   } else if (ev.kind === "region") {
+    const n = ev.text.match(/Region block (\d+)/);
+    const num = n ? Number(n[1]).toLocaleString("en-US") : "";
+    if (look === "angel") banner("region", "PATTERN REGION", "");
+    else banner("region", "REGION CONVERGENCE", "領域収束 · " + num);
     flashTier("region");
   } else if (ev.kind === "mined") {
-    if (look === "angel") titleCard(["採掘 · STRATUM", "MINED", ev.text]);
+    if (look === "angel") titleCard("mined", ["採掘 · STRATUM", "MINED", ev.text]);
     else banner("mined", "BLOCK ACQUIRED", "採掘成功 · " + ev.text);
     flashMine();
   } else if (ev.kind === "workshare") {
