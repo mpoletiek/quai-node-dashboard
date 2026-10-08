@@ -281,12 +281,18 @@ impl PixelMap {
             }
             return;
         };
+        // About twice a second: every image crosses the terminal (and any
+        // SSH link) whole.
         let fresh = self.last != Some((rect, app.theme));
-        if !fresh && app.tick % 3 != 0 {
+        if !fresh && app.tick % 6 != 0 {
             return;
         }
-        let w = (u32::from(rect.width) * self.cell.0).min(1600) as usize;
-        let h = (u32::from(rect.height) * self.cell.1).min(1000) as usize;
+        let w = (u32::from(rect.width) * self.cell.0).min(1600);
+        let h = (u32::from(rect.height) * self.cell.1).min(1000);
+        // A large map (full screen) is drawn at half size; the terminal
+        // scales it to the same cells, at a quarter of the bytes.
+        let half = u32::from(w * h > 360_000) + 1;
+        let (w, h) = ((w / half) as usize, (h / half) as usize);
         if w < 16 || h < 16 {
             return;
         }

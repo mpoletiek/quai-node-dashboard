@@ -92,12 +92,14 @@ impl Canvas {
         self.line((x - r, y + r), (x - r, y - r), c, a);
     }
 
-    /// PNG (8-bit RGBA, zlib level 1).
+    /// PNG (8-bit RGB: the alpha is always opaque; zlib level 1).
     pub fn png(&self) -> Vec<u8> {
-        let mut raw = Vec::with_capacity(self.h * (self.w * 4 + 1));
+        let mut raw = Vec::with_capacity(self.h * (self.w * 3 + 1));
         for row in self.px.chunks(self.w * 4) {
             raw.push(0);
-            raw.extend_from_slice(row);
+            for p in row.chunks(4) {
+                raw.extend_from_slice(&p[..3]);
+            }
         }
         let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
         let _ = z.write_all(&raw);
@@ -106,7 +108,7 @@ impl Canvas {
         let mut ihdr = Vec::new();
         ihdr.extend_from_slice(&(self.w as u32).to_be_bytes());
         ihdr.extend_from_slice(&(self.h as u32).to_be_bytes());
-        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+        ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
         chunk(&mut out, b"IHDR", &ihdr);
         chunk(&mut out, b"IDAT", &idat);
         chunk(&mut out, b"IEND", &[]);
@@ -115,18 +117,9 @@ impl Canvas {
 }
 
 fn crc32(data: &[u8]) -> u32 {
-    let mut c = 0xFFFF_FFFFu32;
-    for &b in data {
-        c ^= u32::from(b);
-        for _ in 0..8 {
-            c = if c & 1 != 0 {
-                0xEDB8_8320 ^ (c >> 1)
-            } else {
-                c >> 1
-            };
-        }
-    }
-    !c
+    let mut c = flate2::Crc::new();
+    c.update(data);
+    c.sum()
 }
 
 fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
@@ -342,6 +335,21 @@ mod tests {
             assert!(png.len() > 100);
             // Something other than the background was drawn.
             assert!(cv.px.chunks(4).any(|p| p[..3] != [0, 0, 0]));
+            // RGB, and the data inflates back to exactly the canvas.
+            assert_eq!(png[25], 2);
+            let idat_len = u32::from_be_bytes([png[33], png[34], png[35], png[36]]) as usize;
+            let mut raw = Vec::new();
+            let _ = std::io::Read::read_to_end(
+                &mut flate2::read::ZlibDecoder::new(&png[41..41 + idat_len]),
+                &mut raw,
+            );
+            assert_eq!(raw.len(), cv.h * (cv.w * 3 + 1));
+            let rgb: Vec<u8> = cv.px.chunks(4).flat_map(|p| p[..3].to_vec()).collect();
+            let rows: Vec<u8> = raw
+                .chunks(cv.w * 3 + 1)
+                .flat_map(|r| r[1..].to_vec())
+                .collect();
+            assert_eq!(rows, rgb);
         }
         assert_eq!(crc32(b"IEND"), 0xAE42_6082);
     }
