@@ -71,7 +71,8 @@ pub enum Graphics {
         zone RPC port (127.0.0.1:9200), works out whether it is rs-quai or go-quai, \
         follows its nodelogs, maps its peers and, if the node runs one, watches its \
         stratum. Every option can also come from a QUAI_DASH_* environment variable \
-        or the config file; `quai-dash config` shows what is in effect and why.\n\n\
+        or the config file (precedence: flag > env > file > detected > default); \
+        `quai-dash config` shows what is in effect and why.\n\n\
         Peer locations come from a local GeoLite2/GeoIP2 City database when one is \
         found, otherwise from ip-api.com, which then receives the peers' IP \
         addresses. --geoip off turns this off."

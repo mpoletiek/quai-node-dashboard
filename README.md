@@ -10,15 +10,22 @@ from what both nodes already offer: their JSON-RPC, their `nodelogs`
 directory, the node process's TCP connections (for the peer map) and,
 when the node runs a stratum, its stratum API (for the mining view).
 
+## Quick start
+
+On the node's host, as the node's user:
+
 ```sh
 cargo build --release                      # target/release/quai-dash
-
-# on the node's host
-quai-dash web --logs ~/node/nodelogs --listen 127.0.0.1:8095
-quai-dash tui --logs ~/node/nodelogs --theme angel
-# with the node's stratum (--node.stratum-enabled)
-quai-dash tui --logs ~/node/nodelogs --stratum-api http://127.0.0.1:3336
+quai-dash web                              # then open http://127.0.0.1:8090/
+quai-dash tui                              # or the terminal version
+quai-dash config                           # what it found, and why
 ```
+
+No flags needed: quai-dash finds the node on the zone RPC port, tells
+rs-quai from go-quai, follows its logs, maps its peers (located by
+default, see [Geolocation](#geolocation)) and, if the node runs a
+stratum, shows its miners. Everything it detects can be overridden, and
+every option can live in a [config file](#configuration).
 
 ## What it shows
 
@@ -39,13 +46,15 @@ quai-dash tui --logs ~/node/nodelogs --stratum-api http://127.0.0.1:3336
   and mismatches against a comparison node.
 - With `--compare`, a second node (for example go-quai next to rs-quai)
   is checked block by block. The result is shown as a sync ratio.
-- With `--stratum-api`, the node's mining: see [Mining](#mining).
+- With the node's stratum API, its mining: see [Mining](#mining).
 
 ## Mining
 
-`--stratum-api` points at the stratum API of the node being watched
+The mining view reads the stratum API of the node being watched
 (`--node.stratum-api-addr`, port 3336 by default; rs-quai's is a port of
-go-quai's, so both work). The view is the node's: every miner (payout
+go-quai's, so both work). quai-dash uses the address on the node's
+command line, else port 3336 on the RPC host, if it answers; or set
+`--stratum-api URL` (`off` turns it off). The view is the node's: every miner (payout
 address) and worker (rig or miner process) connected to its stratum, on
 all three algorithms.
 
@@ -68,29 +77,108 @@ all three algorithms.
   mined through it. A mined block gets its own full-screen moment in both
   looks.
 
-Without `--stratum-api` the panel says how to enable it; if the API stops
+Without a stratum API the panel says how to point at one; if the API stops
 answering, the panel says so and the rest of the dashboard carries on.
 The API should stay on the node's host (it has no authentication): run
 quai-dash there, or tunnel it.
 
-## Options
+## Detection
 
-| Option | Default | |
-|---|---|---|
-| `--rpc URL` | `http://127.0.0.1:9200` | zone JSON-RPC (also `QUAI_DASH_RPC`) |
-| `--region URL`, `--prime URL` | same host, ports 9002 / 9001 | region and prime RPC |
-| `--label NAME` | `QUAI NODE` | name on the dashboard |
-| `--logs PATH` | none | a log file, or a `nodelogs` directory (go-quai: `zone-0-0.log`, rs-quai: `global.log`) |
-| `--compare [LABEL=]URL` | none | a second node's zone RPC to compare blocks with |
-| `--geoip-db FILE` | none | MaxMind GeoLite2/GeoIP2 City database for peer locations |
-| `--geoip-online` | off | locate peers with ip-api.com instead |
-| `--here LAT,LON` | none | this node's position on the map |
-| `--stall-secs N` | 60 | seconds without a zone block before a stall event |
-| `--stratum-api URL` | none | the node's stratum API, for the mining view (also `QUAI_DASH_STRATUM_API`) |
-| `web --listen ADDR` | `127.0.0.1:8090` | where the web dashboard listens |
-| `tui --theme ghost\|angel` | `ghost` | starting look |
-| `tui --graphics auto\|on\|off` | `auto` | pixel peer map (kitty graphics protocol) |
-| `tui --notify` | off | desktop notifications for alerts |
+Started without flags, quai-dash looks for the node on this host:
+
+1. **The process.** Whoever listens on the zone RPC port (default
+   127.0.0.1:9200), found through `/proc/net/tcp` and the processes'
+   socket links; failing that, a process named `rs-quai` or `go-quai`.
+   `--node-pid` picks one.
+2. **The logs.** Both nodes write `nodelogs/` in their working
+   directory, so quai-dash follows `<cwd>/nodelogs` (or
+   `<--global.data-dir>/nodelogs`): rs-quai's `global.log`, or
+   go-quai's own zone log (`zone-R-Z.log`, from `quai_nodeLocation`).
+3. **The kind** (rs-quai, go-quai or unknown), strongest evidence first:
+   - the process name;
+   - the log layout and format: go-quai writes per-chain logs
+     (`prime.log`, `region-N.log`, `zone-N-M.log`) in logrus format
+     (`INFO   [10-01|09:03:52.206] Appended new block   number=…`);
+     rs-quai writes `global.log` only, in `tracing` format
+     (`2026-10-01T17:23:03.275792Z  INFO rsq_node::node: …`);
+   - the stratum API: rs-quai's `/api/pool/stats` has a `mined` tally,
+     go-quai's does not;
+   - last, a weak hint: go-quai's RPC answers with `Content-Type`,
+     rs-quai's with `content-type`. Otherwise the two are RPC-identical.
+4. **Endpoints.** Region and prime are the zone host on ports 9002 and
+   9001. The stratum API is the node's `--node.stratum-api-addr`, else
+   port 3336, if it answers.
+
+The kind picks the log file and its parser (each line's level is read
+from its own field), and shows in the header of both dashboards and on
+the startup line:
+
+```text
+quai-dash: rs-quai node (process rs-quai (pid 163342)) at http://127.0.0.1:9200
+quai-dash: logs /home/node/nodelogs/global.log · stratum http://127.0.0.1:3336 · geo online (ip-api.com: …)
+```
+
+Reading another user's process needs that user (or root): quai-dash
+then says so, and still shows everything that RPC offers. So does a
+remote `--rpc`, where the kind comes from the stratum or header hints,
+or stays `unknown`.
+
+## Configuration
+
+Every option is a flag, a `QUAI_DASH_*` environment variable and a key
+in a TOML config file. The first that sets an option wins:
+
+**flag > environment > config file > detected > default**
+
+The config file is `--config FILE` (or `QUAI_DASH_CONFIG`), else the
+first that exists of `$XDG_CONFIG_HOME/quai-dash/config.toml`,
+`~/.config/quai-dash/config.toml` and `/etc/quai-dash/config.toml`.
+Unknown keys are errors. [`contrib/config.toml`](contrib/config.toml)
+lists every key; for example:
+
+```toml
+label = "RS-QUAI SOAK"
+logs = "~/node/nodelogs"          # skip detection
+compare = "GO-QUAI=http://10.0.0.12:9200"
+here = "50.1,8.7"
+geoip = "online"
+listen = "127.0.0.1:8095"
+theme = "angel"
+```
+
+`quai-dash config` prints the effective settings and where each came
+from (`flag`, `env`, `file`, `detected: …`, `default`), plus the node it
+found, the log file and the geolocation source.
+
+| Flag | Environment / file key | Default | |
+|---|---|---|---|
+| `--rpc URL` | `QUAI_DASH_RPC` / `rpc` | `http://127.0.0.1:9200` | zone JSON-RPC |
+| `--region URL`, `--prime URL` | `…_REGION`, `…_PRIME` | zone host, ports 9002 / 9001 | region and prime RPC |
+| `--node-kind K` | `…_NODE_KIND` / `node_kind` | `auto` | `auto`, `rs-quai` or `go-quai` |
+| `--node-pid PID` | `…_NODE_PID` / `node_pid` | detected | pin the peer map to this process |
+| `--logs PATH` | `…_LOGS` / `logs` | detected | a log file or `nodelogs` directory; `off` |
+| `--stratum-api URL` | `…_STRATUM_API` / `stratum_api` | detected | the node's stratum API; `off` |
+| `--label NAME` | `…_LABEL` / `label` | `QUAI NODE` | name on the dashboard |
+| `--compare [LABEL=]URL` | `…_COMPARE` / `compare` | none | a second node's zone RPC to compare blocks with |
+| `--geoip MODE` | `…_GEOIP` / `geoip` | `auto` | `auto`, `db`, `online` or `off` ([Geolocation](#geolocation)) |
+| `--geoip-db FILE` | `…_GEOIP_DB` / `geoip_db` | detected | MaxMind City database |
+| `--geoip-online` | `…_GEOIP_ONLINE` / `geoip_online` | | same as `--geoip online` |
+| `--here LAT,LON` | `…_HERE` / `here` | none | this node's position on the map |
+| `--stall-secs N` | `…_STALL_SECS` / `stall_secs` | 60 | seconds without a zone block before a stall event |
+| `--demo` | `…_DEMO` / `demo` | off | an invented node |
+| `--listen ADDR` | `…_LISTEN` / `listen` | `127.0.0.1:8090` | where `web` listens |
+| `--theme ghost\|angel` | `…_THEME` / `theme` | `ghost` | `tui`: starting look |
+| `--graphics auto\|on\|off` | `…_GRAPHICS` / `graphics` | `auto` | `tui`: pixel peer map (kitty graphics protocol) |
+| `--notify` | `…_NOTIFY` / `notify` | off | `tui`: desktop notifications for alerts |
+
+Options go before or after the subcommand (`quai-dash --label X web
+--listen …`). Boolean flags take `--flag` or `--flag=false`; in the
+environment and the file, `true`/`false`.
+
+The web dashboard listens on 127.0.0.1 unless told otherwise. It has no
+authentication: listening on any other address shows the node's logs,
+peers and miners to everyone who can reach it, and quai-dash prints a
+warning when it does. Prefer an [SSH tunnel](#watching-a-remote-node).
 
 ## The peer map
 
@@ -103,13 +191,78 @@ changes to the node.
   (or root).
 - It sees TCP peers only; QUIC peers share one UDP socket and can't be
   told apart. So the map usually shows fewer peers than `net_peerCount`.
-- Locations need a geolocation source:
-  - `--geoip-db` looks peers up offline. GeoLite2-City is free from
-    MaxMind with an account.
-  - `--geoip-online` sends the peers' IP addresses to ip-api.com
-    (free tier: HTTP, 15 requests a minute, 100 addresses each). It is
-    off unless you ask for it.
-  - Without either, the globe shows the peer count as an orbit.
+
+## Geolocation
+
+Peers are placed on the map by default (`--geoip auto`):
+
+- **Local database**, when found: a MaxMind GeoLite2 or GeoIP2 City
+  database (`GeoLite2-City.mmdb`, `GeoIP2-City.mmdb`, or another
+  `*City*.mmdb`) in `/usr/share/GeoIP`, `/var/lib/GeoIP`,
+  `$XDG_DATA_HOME/GeoIP` or `~/.local/share/GeoIP`, or `--geoip-db FILE`.
+  Lookups stay on the host. GeoLite2-City is free from MaxMind with an
+  account (Gentoo: `net-misc/geoipupdate`; Debian: `geoipupdate`).
+- **Otherwise ip-api.com.** **This sends your peers' IP addresses to
+  ip-api.com**, over plain HTTP (its free tier has no HTTPS). quai-dash
+  keeps within the free tier: the batch endpoint, at most 100 addresses
+  a request and 15 requests a minute, a pause when the service says the
+  window is spent (`X-Rl: 0`, or HTTP 429), and every answer cached, so
+  an address is asked about once. Private and reserved addresses are
+  never sent.
+- `--geoip db` uses only the database (an error without one),
+  `--geoip online` only ip-api.com, and **`--geoip off`** turns
+  locations off (the globe then shows the peer count as an orbit).
+
+## Running as a service
+
+`scripts/install-service.sh` installs the binary and a service that runs
+`quai-dash web` with no flags: detection and the config file supply the
+rest.
+
+```sh
+cargo build --release
+scripts/install-service.sh --dry-run          # shows every action, changes nothing
+scripts/install-service.sh --run-as node      # install, enable and start as user "node"
+scripts/install-service.sh --user             # systemd user unit, no root
+scripts/install-service.sh --uninstall
+```
+
+| Option | |
+|---|---|
+| `--init systemd\|openrc` | init system (default: detected from `/run/systemd/system` or `/run/openrc`) |
+| `--run-as USER` | user the service runs as (default: whoever runs the installer; `quai-dash` is created if missing) |
+| `--user` | a systemd `--user` unit in `~/.config/systemd/user`, binary in `~/.local/bin` (OpenRC: not supported; use the system service with `--run-as` yourself) |
+| `--prefix DIR` | binary in `DIR/bin` (default `/usr/local`, `~/.local` with `--user`) |
+| `--binary FILE` | binary to install (default `target/release/quai-dash`) |
+| `--uninstall` | stop, disable and remove the service and binary; config and environment files stay |
+| `--force` | overwrite an existing config or environment file (never otherwise) |
+| `--dry-run` | print every action without doing it |
+
+It prints its plan first and uses sudo only when not already root.
+
+**Run it as the node's user.** Reading the node's logs and its `/proc`
+entries (the peer map) needs the node's own user; under the systemd
+unit's hardening even root can't read another user's `/proc/<pid>/fd`.
+A dedicated `quai-dash` user works, but then shows only what RPC offers.
+
+What gets installed:
+
+| | systemd | OpenRC |
+|---|---|---|
+| service | `/etc/systemd/system/quai-dash@.service`, enabled as `quai-dash@USER` | `/etc/init.d/quai-dash`, in the `default` runlevel |
+| settings | `/etc/default/quai-dash` | `/etc/conf.d/quai-dash` (`QUAI_DASH_USER`) |
+| config | `/etc/quai-dash/config.toml` (the user's `~/.config/quai-dash/config.toml` comes first) | same |
+| restarts | `Restart=on-failure` | `supervise-daemon` respawn |
+
+Both settings files take `QUAI_DASH_*` variables (exported, for OpenRC)
+and `QUAI_DASH_ARGS`, extra arguments for `quai-dash web` (split on
+whitespace: values with spaces belong in the config file). The systemd
+unit is hardened (`NoNewPrivileges`, `ProtectSystem=strict`,
+`ProtectHome=read-only`, `ReadOnlyPaths=/`, `PrivateTmp`, no
+capabilities, `@system-service` system calls) and still reads the
+node's logs and `/proc` and reaches the network for RPC and
+geolocation. OpenRC logs to `/var/log/quai-dash.log`; systemd to the
+journal.
 
 ## Modern terminals
 
@@ -133,12 +286,13 @@ Every terminal gets:
 Run quai-dash on the node's host and forward its port:
 
 ```sh
-ssh -L 8095:127.0.0.1:8095 user@node-host 'quai-dash web --logs ~/node/nodelogs --listen 127.0.0.1:8095'
-# then open http://127.0.0.1:8095/
+ssh -L 8090:127.0.0.1:8090 user@node-host quai-dash web
+# then open http://127.0.0.1:8090/
 ```
 
 Pointing `--rpc` at a remote node works for everything except the peer
-map.
+map and the logs; the node kind then comes from its stratum API or RPC
+header hints, or shows as unknown.
 
 ## Keys
 
