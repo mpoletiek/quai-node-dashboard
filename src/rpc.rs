@@ -7,6 +7,27 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+/// An HTTP reply.
+#[derive(Clone, Debug, Default)]
+pub struct Reply {
+    /// Status code.
+    pub code: u16,
+    /// Header names (as the server spelled them) and values, in order.
+    pub headers: Vec<(String, String)>,
+    /// Body.
+    pub body: Vec<u8>,
+}
+
+impl Reply {
+    /// The first header named `name`, ignoring case.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
 /// An `http://host:port/path` endpoint.
 #[derive(Clone, Debug)]
 pub struct Endpoint {
@@ -54,16 +75,6 @@ impl Endpoint {
         &self.host
     }
 
-    /// The same host on another port.
-    pub fn with_port(&self, port: u16) -> Endpoint {
-        Endpoint {
-            url: format!("http://{}:{port}", self.host),
-            port,
-            path: "/".into(),
-            ..self.clone()
-        }
-    }
-
     /// POSTs `body` and returns the response body of a 200.
     pub fn post(&self, body: &str) -> Result<Vec<u8>, String> {
         self.request("POST", &self.path, Some(body))
@@ -81,6 +92,19 @@ impl Endpoint {
     }
 
     fn request(&self, method: &str, path: &str, body: Option<&str>) -> Result<Vec<u8>, String> {
+        let r = self.exchange(method, path, body)?;
+        if r.code != 200 {
+            return Err(format!("HTTP {}", r.code));
+        }
+        Ok(r.body)
+    }
+
+    /// POSTs `body` and returns the whole reply, whatever its status.
+    pub fn post_reply(&self, body: &str) -> Result<Reply, String> {
+        self.exchange("POST", &self.path, Some(body))
+    }
+
+    fn exchange(&self, method: &str, path: &str, body: Option<&str>) -> Result<Reply, String> {
         let addr = (self.host.as_str(), self.port)
             .to_socket_addrs()
             .map_err(|e| e.to_string())?
@@ -114,6 +138,7 @@ impl Endpoint {
             .ok_or_else(|| format!("bad HTTP status line: {}", status.trim()))?;
         let mut len: Option<usize> = None;
         let mut chunked = false;
+        let mut headers = Vec::new();
         loop {
             let mut line = String::new();
             r.read_line(&mut line).map_err(|e| e.to_string())?;
@@ -122,6 +147,7 @@ impl Endpoint {
                 break;
             }
             if let Some((k, v)) = line.split_once(':') {
+                headers.push((k.trim().to_string(), v.trim().to_string()));
                 let k = k.trim().to_ascii_lowercase();
                 if k == "content-length" {
                     len = v.trim().parse().ok();
@@ -149,10 +175,11 @@ impl Endpoint {
         } else {
             r.read_to_end(&mut data).map_err(|e| e.to_string())?;
         }
-        if code != 200 {
-            return Err(format!("HTTP {code}"));
-        }
-        Ok(data)
+        Ok(Reply {
+            code,
+            headers,
+            body: data,
+        })
     }
 
     /// Calls a JSON-RPC method and returns its `result`.

@@ -945,6 +945,14 @@ fn draw_header(f: &mut Frame, app: &App, s: &State, area: Rect) {
             format!("  ◇ {location}  ◇ CHAIN {chain}  "),
             Style::new().fg(p.dim),
         ),
+        Span::styled(
+            if s.node.kind.is_empty() {
+                String::new()
+            } else {
+                format!("◇ {}  ", s.node.kind.to_uppercase())
+            },
+            Style::new().fg(p.text),
+        ),
         live,
         Span::styled(format!("  {theme_name} ",), Style::new().fg(p.purple)),
         Span::styled(utc_clock(now), Style::new().fg(p.fg)),
@@ -1442,7 +1450,7 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
         let caption = if mapped == 0 {
             s.peers.note.clone().unwrap_or_else(|| {
                 format!(
-                    "{} peers; enable --geoip-db or --geoip-online to place them",
+                    "{} peers; locations are off (--geoip off)",
                     s.peers.list.len()
                 )
             })
@@ -1525,7 +1533,7 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
         s.peers.note.clone().or_else(|| {
             (s.peers.geo == "off" && !s.peers.list.is_empty()).then(|| {
                 format!(
-                    "{} peers; enable --geoip-db or --geoip-online to place them",
+                    "{} peers; locations are off (--geoip off)",
                     s.peers.list.len()
                 )
             })
@@ -1730,7 +1738,9 @@ fn short_addr(a: &str) -> String {
 /// The node's view of its stratum, or why there is none.
 fn stratum_state(s: &State) -> Result<&crate::state::Stratum, String> {
     match &s.stratum {
-        None => Err("no stratum API: run with --stratum-api http://127.0.0.1:3336".into()),
+        None => {
+            Err("no stratum API found on port 3336: set --stratum-api http://127.0.0.1:3336".into())
+        }
         Some(st) if !st.online && st.workers.is_empty() => Err(format!(
             "stratum API unreachable: {}",
             st.error.clone().unwrap_or_else(|| st.api.clone())
@@ -2115,7 +2125,10 @@ fn draw_logs(f: &mut Frame, app: &App, s: &State, area: Rect) {
     if s.logs.is_empty() {
         let msg = match &s.node.log_file {
             Some(file) => format!("following {file}"),
-            None => "no log file: run with --logs <nodelogs dir or file>".into(),
+            None => {
+                "no log file found: run as the node's user, or set --logs <nodelogs dir or file>"
+                    .into()
+            }
         };
         f.render_widget(
             Paragraph::new(Line::styled(msg, Style::new().fg(p.dim))),
@@ -2337,6 +2350,7 @@ mod tests {
         let mut s = State::default();
         s.node.label = "RS-QUAI SOAK".into();
         s.node.rpc = "http://127.0.0.1:9200".into();
+        s.node.kind = "rs-quai".into();
         s.node.location = "Cyprus-1".into();
         s.node.chain_id = Some(9);
         s.node.online = true;
@@ -2509,6 +2523,7 @@ mod tests {
         for want in [
             "QUAI//DIVE",
             "RS-QUAI SOAK",
+            "◇ RS-QUAI",
             "Cyprus-1",
             "HIERARCHY",
             "MERGED MINING",

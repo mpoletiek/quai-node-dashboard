@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::peers::{self, Geo};
+use crate::detect::NodeKind;
+use crate::geo::Geo;
+use crate::peers;
 use crate::rpc::{Endpoint, hex_dec, hex_u64, wei_to_quai};
 use crate::state::{
     Algo, BLOCK_HISTORY, BlockInfo, Compare, Head, Mining, Peer, PendingShares, Place, State,
@@ -21,6 +23,10 @@ use crate::stratum;
 pub struct Config {
     /// Display name.
     pub label: String,
+    /// rs-quai, go-quai or unknown.
+    pub kind: NodeKind,
+    /// How the kind was found.
+    pub kind_how: String,
     /// Zone RPC.
     pub zone: Endpoint,
     /// Region RPC.
@@ -37,6 +43,8 @@ pub struct Config {
     pub stall_secs: u64,
     /// The node's stratum API.
     pub stratum: Option<Endpoint>,
+    /// The node's PID, when pinned (otherwise found through the zone port).
+    pub pid: Option<u32>,
 }
 
 fn block_info(b: &Value) -> Option<BlockInfo> {
@@ -226,7 +234,7 @@ pub fn short_worker(w: &str) -> String {
 }
 
 /// Runs forever, updating `state`.
-pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
+pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
     let mut last_zone: u64 = 0;
     let mut last_new = Instant::now();
     let mut stalled = false;
@@ -243,6 +251,8 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
     let local = matches!(cfg.zone.host(), "127.0.0.1" | "localhost" | "::1" | "[::1]");
     if let Ok(mut st) = state.lock() {
         st.node.label = cfg.label.clone();
+        st.node.kind = cfg.kind.name().to_string();
+        st.node.kind_how = cfg.kind_how.clone();
         st.node.rpc = cfg.zone.url.clone();
         st.peers.geo = cfg.geo.kind().to_string();
         st.peers.here = cfg.here.clone();
@@ -422,7 +432,7 @@ pub fn run(cfg: Config, state: Arc<Mutex<State>>) {
         // Peers from the OS, every 10 s.
         if tick % 10 == 0 {
             let (list, note) = if local {
-                match peers::connections(&rpc_ports) {
+                match peers::connections(&rpc_ports, cfg.pid) {
                     Ok(conns) => {
                         let ips: Vec<IpAddr> = conns.iter().map(|c| c.ip).collect();
                         cfg.geo.resolve(&ips, &mut geo_cache);

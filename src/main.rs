@@ -10,7 +10,10 @@
 #![allow(clippy::float_arithmetic, clippy::disallowed_methods)]
 
 mod collect;
+mod config;
 mod demo;
+mod detect;
+mod geo;
 mod logs;
 mod peers;
 mod raster;
@@ -22,18 +25,23 @@ mod tui;
 mod web;
 mod world;
 
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use serde::Deserialize;
 
-use crate::peers::Geo;
+use crate::config::{GeoMode, Partial, Settings, Source};
+use crate::detect::{Detected, Given, KindChoice, NodeKind};
+use crate::geo::Geo;
 use crate::rpc::Endpoint;
 use crate::state::{Place, State};
 
 /// Visual theme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Theme {
     /// Cyan cyberbrain HUD.
     Ghost,
@@ -42,7 +50,8 @@ pub enum Theme {
 }
 
 /// Image support.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Graphics {
     /// On in kitty, Ghostty and WezTerm.
     Auto,
@@ -56,76 +65,38 @@ pub enum Graphics {
 #[command(
     name = "quai-dash",
     version,
-    about = "Live web and terminal monitor for Quai nodes (rs-quai or go-quai)"
+    about = "Live web and terminal monitor for Quai nodes (rs-quai or go-quai)",
+    long_about = "Live web and terminal monitor for Quai nodes (rs-quai or go-quai).\n\n\
+        Run it on the node's host with no flags: it finds the node listening on the \
+        zone RPC port (127.0.0.1:9200), works out whether it is rs-quai or go-quai, \
+        follows its nodelogs, maps its peers and, if the node runs one, watches its \
+        stratum. Every option can also come from a QUAI_DASH_* environment variable \
+        or the config file; `quai-dash config` shows what is in effect and why.\n\n\
+        Peer locations come from a local GeoLite2/GeoIP2 City database when one is \
+        found, otherwise from ip-api.com, which then receives the peers' IP \
+        addresses. --geoip off turns this off."
 )]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
-    /// Zone JSON-RPC endpoint.
-    #[arg(
-        long,
-        global = true,
-        default_value = "http://127.0.0.1:9200",
-        env = "QUAI_DASH_RPC"
-    )]
-    rpc: String,
-    /// Region JSON-RPC endpoint (default: the zone host on port 9002).
-    #[arg(long, global = true)]
-    region: Option<String>,
-    /// Prime JSON-RPC endpoint (default: the zone host on port 9001).
-    #[arg(long, global = true)]
-    prime: Option<String>,
-    /// Name shown on the dashboard.
-    #[arg(long, global = true, default_value = "QUAI NODE")]
-    label: String,
-    /// The node's log file or nodelogs directory to follow.
-    #[arg(long, global = true)]
-    logs: Option<PathBuf>,
-    /// A second node's zone RPC to compare blocks with, as URL or LABEL=URL.
-    #[arg(long, global = true)]
-    compare: Option<String>,
-    /// MaxMind GeoLite2/GeoIP2 City database for the peer map.
-    #[arg(long, global = true)]
-    geoip_db: Option<PathBuf>,
-    /// Locate peers with ip-api.com (sends peer IP addresses to that service).
-    #[arg(long, global = true)]
-    geoip_online: bool,
-    /// This node's position on the map, as LAT,LON.
-    #[arg(long, global = true)]
-    here: Option<String>,
-    /// The node's stratum API (`--node.stratum-api-addr`, default port
-    /// 3336), for the mining view: every miner and worker on this node.
-    #[arg(long, global = true, env = "QUAI_DASH_STRATUM_API")]
-    stratum_api: Option<String>,
-    /// Seconds without a zone block before the dashboard raises a stall.
-    #[arg(long, global = true, default_value_t = 60)]
-    stall_secs: u64,
-    /// Show an invented node instead of connecting to one.
-    #[arg(long, global = true)]
-    demo: bool,
+    /// Config file (TOML) [default: the first of
+    /// $XDG_CONFIG_HOME/quai-dash/config.toml, ~/.config/quai-dash/config.toml,
+    /// /etc/quai-dash/config.toml].
+    #[arg(long, global = true, env = "QUAI_DASH_CONFIG", value_name = "FILE")]
+    config: Option<PathBuf>,
+    #[command(flatten)]
+    opts: Partial,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Serve the web dashboard.
-    Web {
-        /// Address to listen on.
-        #[arg(long, default_value = "127.0.0.1:8090")]
-        listen: String,
-    },
+    /// Serve the web dashboard (127.0.0.1:8090 unless --listen says otherwise).
+    Web,
     /// Run the terminal dashboard.
-    Tui {
-        /// Starting theme (t toggles).
-        #[arg(long, value_enum, default_value_t = Theme::Ghost)]
-        theme: Theme,
-        /// Pixel peer map with the kitty graphics protocol (kitty, Ghostty,
-        /// WezTerm): auto-detected, or forced on or off.
-        #[arg(long, value_enum, default_value_t = Graphics::Auto)]
-        graphics: Graphics,
-        /// Desktop notifications for stalls, reorgs, mismatches and RPC loss.
-        #[arg(long)]
-        notify: bool,
-    },
+    Tui,
+    /// Show the effective settings, where each came from, and what
+    /// detection found.
+    Config,
     /// Record a scripted tour of the terminal dashboard as JSON frames
     /// (for the web player).
     #[command(hide = true)]
@@ -149,18 +120,215 @@ fn endpoint(url: &str) -> Result<Endpoint, String> {
     Endpoint::new(url, Duration::from_secs(4))
 }
 
+/// `off`, `none` or empty: turned off.
+fn is_off(v: &str) -> bool {
+    matches!(v.trim(), "" | "off" | "none")
+}
+
+/// What detection adds as a settings layer, with a note per key.
+fn detected_layer(d: &Detected, pre: &Settings) -> (Partial, BTreeMap<&'static str, String>) {
+    let mut p = Partial::default();
+    let mut how = BTreeMap::new();
+    if !pre.explicit("node_kind") {
+        let choice = match d.kind {
+            NodeKind::RsQuai => Some(KindChoice::RsQuai),
+            NodeKind::GoQuai => Some(KindChoice::GoQuai),
+            NodeKind::Unknown => None,
+        };
+        if choice.is_some() {
+            p.node_kind = choice;
+            how.insert("node_kind", d.kind_why.clone());
+        }
+    }
+    if let Some(proc_) = &d.process {
+        p.node_pid = Some(proc_.pid);
+        how.insert("node_pid", format!("{} ({})", proc_.name, proc_.how));
+    }
+    if let Some(l) = &d.logs {
+        p.logs = Some(l.clone());
+        how.insert("logs", "the node's working directory".into());
+    }
+    if let Some(u) = &d.stratum {
+        p.stratum_api = Some(u.clone());
+        how.insert("stratum_api", "answers".into());
+    }
+    if pre.v.geoip != Some(GeoMode::Off) && !pre.explicit("geoip_db") {
+        let dirs = geo::db_dirs();
+        if let Some(db) = geo::find_db(&dirs) {
+            how.insert(
+                "geoip_db",
+                format!(
+                    "found in {}",
+                    db.parent()
+                        .map_or(String::new(), |d| d.display().to_string())
+                ),
+            );
+            p.geoip_db = Some(db);
+        }
+    }
+    (p, how)
+}
+
+/// Builds the geolocation source the settings ask for, and a description.
+fn geo_from(s: &Settings) -> Result<(Geo, String), String> {
+    let db = s.v.geoip_db.as_deref().map(config::expand_home);
+    let online = || -> Result<(Geo, String), String> {
+        Ok((
+            Geo::online()?,
+            "online (ip-api.com: peer IP addresses are sent there)".into(),
+        ))
+    };
+    match s.v.geoip.unwrap_or(GeoMode::Auto) {
+        GeoMode::Off => Ok((Geo::Off, "off".into())),
+        GeoMode::Online => online(),
+        GeoMode::Db => {
+            let db = db.ok_or("--geoip db: no City database found; give --geoip-db FILE")?;
+            Ok((geo::open_db(&db)?, format!("db {}", db.display())))
+        }
+        GeoMode::Auto => match db {
+            Some(db) => match geo::open_db(&db) {
+                Ok(g) => Ok((g, format!("db {}", db.display()))),
+                // An explicit but broken database is an error; a found one
+                // falls back to online.
+                Err(e) if s.explicit("geoip_db") => Err(e),
+                Err(e) => {
+                    eprintln!("quai-dash: {e}; using ip-api.com instead");
+                    online()
+                }
+            },
+            None => online(),
+        },
+    }
+}
+
+/// `quai-dash config`.
+fn print_config(
+    s: &Settings,
+    file: Option<&Path>,
+    d: Option<&Detected>,
+    kind: NodeKind,
+    log_file: Option<&Path>,
+    geo: &str,
+) {
+    use std::fmt::Write as _;
+    use std::io::Write as _;
+    let mut o = String::new();
+    match file {
+        Some(f) => {
+            let _ = writeln!(o, "config file  {}", f.display());
+        }
+        None => {
+            let places: Vec<String> = config::config_candidates()
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect();
+            let _ = writeln!(o, "config file  none (looked for {})", places.join(", "));
+        }
+    }
+    match d {
+        Some(d) => {
+            let _ = writeln!(o, "node kind    {} ({})", kind.name(), kind_how(s, d));
+            if let Some(p) = &d.process {
+                let cwd = p
+                    .cwd
+                    .as_ref()
+                    .map_or("not readable".to_string(), |c| c.display().to_string());
+                let _ = writeln!(
+                    o,
+                    "process      {} pid {} ({}), cwd {cwd}",
+                    p.name, p.pid, p.how
+                );
+            }
+            for n in &d.notes {
+                let _ = writeln!(o, "note         {n}");
+            }
+        }
+        None => {
+            let _ = writeln!(o, "node kind    demo (no detection)");
+        }
+    }
+    let _ = writeln!(
+        o,
+        "log file     {}",
+        log_file.map_or("none".to_string(), |f| f.display().to_string())
+    );
+    let _ = writeln!(o, "geolocation  {geo}");
+    o.push('\n');
+    let rows = s.rows();
+    let w = rows.iter().map(|r| r.0.len()).max().unwrap_or(0);
+    let vw = rows
+        .iter()
+        .map(|r| r.1.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(48);
+    let _ = writeln!(o, "{:w$}  {:vw$}  SOURCE", "KEY", "VALUE");
+    for (k, v, src) in rows {
+        let _ = writeln!(o, "{k:w$}  {v:vw$}  {src}");
+    }
+    o.push('\n');
+    let _ = writeln!(
+        o,
+        "Precedence: flag > QUAI_DASH_* env > config file > detected > default."
+    );
+    // A closed pipe (`| head`) is not an error worth a panic.
+    let _ = std::io::stdout().write_all(o.as_bytes());
+}
+
+/// Why the node kind is what it is.
+fn kind_how(s: &Settings, d: &Detected) -> String {
+    match s.source("node_kind") {
+        Some(Source::Detected(how)) => how.clone(),
+        Some(src) if src.is_explicit() => format!("set by {src}"),
+        _ => d.kind_why.clone(),
+    }
+}
+
 fn run() -> Result<(), String> {
-    let cli = Cli::parse();
-    let zone = endpoint(&cli.rpc)?;
-    let region = match &cli.region {
-        Some(u) => Some(endpoint(u)?),
-        None => Some(zone.with_port(9002)),
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches).map_err(|e| e.to_string())?;
+    let (flag, env) = cli.opts.split_cli(&matches);
+    let file_path = config::config_path(cli.config.as_deref())?;
+    let file = match &file_path {
+        Some(p) => {
+            let text = std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            Partial::from_toml(&text).map_err(|e| format!("{}: {e}", p.display()))?
+        }
+        None => Partial::default(),
     };
-    let prime = match &cli.prime {
-        Some(u) => Some(endpoint(u)?),
-        None => Some(zone.with_port(9001)),
+    let none = Partial::default();
+    let pre = Settings::merge(&flag, &env, &file, &none, &BTreeMap::new());
+    let demo = pre.v.demo == Some(true) || matches!(cli.cmd, Cmd::Record { .. });
+    // Detection fills what the user left open.
+    let detected = if demo {
+        None
+    } else {
+        let zone = endpoint(pre.rpc())?;
+        let logs = pre.v.logs.as_deref().map(config::expand_home);
+        let stratum_given = pre.v.stratum_api.is_some();
+        Some(detect::detect(&Given {
+            zone: &zone,
+            kind: pre.v.node_kind.and_then(KindChoice::forced),
+            pid: pre.v.node_pid,
+            logs: logs.as_deref(),
+            stratum: stratum_given,
+        }))
     };
-    let compare = match &cli.compare {
+    let s = match &detected {
+        Some(d) => {
+            let (layer, how) = detected_layer(d, &pre);
+            Settings::merge(&flag, &env, &file, &layer, &how)
+        }
+        None => pre,
+    };
+    let kind =
+        s.v.node_kind
+            .and_then(KindChoice::forced)
+            .unwrap_or(NodeKind::Unknown);
+    let zone = endpoint(s.rpc())?;
+    let region = s.v.region.as_deref().map(endpoint).transpose()?;
+    let prime = s.v.prime.as_deref().map(endpoint).transpose()?;
+    let compare = match &s.v.compare {
         Some(c) => {
             let (label, url) = c
                 .split_once("=http")
@@ -171,17 +339,33 @@ fn run() -> Result<(), String> {
         }
         None => None,
     };
-    let geo = match (&cli.geoip_db, cli.geoip_online) {
-        (Some(p), _) => peers::open_db(p)?,
-        (None, true) => Geo::Online(Endpoint::new(
-            "http://ip-api.com/batch",
-            Duration::from_secs(6),
-        )?),
-        (None, false) => Geo::Off,
+    let log_file = match s.v.logs.as_deref() {
+        Some(p) if !is_off(&p.to_string_lossy()) => {
+            let location = detected.as_ref().and_then(|d| d.location);
+            Some(logs::resolve(&config::expand_home(p), kind, location))
+        }
+        _ => None,
     };
-    let here = match &cli.here {
-        Some(s) => {
-            let (a, b) = s.split_once(',').ok_or("--here expects LAT,LON")?;
+    if matches!(cli.cmd, Cmd::Config) {
+        let geo = geo_from(&s).map_or_else(|e| format!("error: {e}"), |g| g.1);
+        print_config(
+            &s,
+            file_path.as_deref(),
+            detected.as_ref(),
+            kind,
+            log_file.as_deref(),
+            &geo,
+        );
+        return Ok(());
+    }
+    let (geo, geo_text) = if demo {
+        (Geo::Off, "demo".to_string())
+    } else {
+        geo_from(&s)?
+    };
+    let here = match &s.v.here {
+        Some(h) => {
+            let (a, b) = h.split_once(',').ok_or("--here expects LAT,LON")?;
             let lat = a.trim().parse().map_err(|_| "--here: bad latitude")?;
             let lon = b.trim().parse().map_err(|_| "--here: bad longitude")?;
             Some(Place {
@@ -193,62 +377,96 @@ fn run() -> Result<(), String> {
         }
         None => None,
     };
+    let stratum = match s.v.stratum_api.as_deref() {
+        Some(u) if !is_off(u) => Some(endpoint(u)?),
+        _ => None,
+    };
     let state = Arc::new(Mutex::new(State::default()));
-    if let Some(p) = &cli.logs {
-        let file = logs::resolve(p);
+    if let Some(file) = log_file.clone() {
         if let Ok(mut st) = state.lock() {
             st.node.log_file = Some(file.display().to_string());
         }
         let s = state.clone();
-        std::thread::spawn(move || logs::follow(file, s));
+        std::thread::spawn(move || logs::follow(file, kind, s));
     }
-    if cli.demo || matches!(cli.cmd, Cmd::Record { .. }) {
+    if demo {
         let s = state.clone();
         std::thread::spawn(move || demo::run(s));
     } else {
+        // What was found, on one line, and anything worth knowing.
+        let d = detected.clone().unwrap_or_default();
+        let how = kind_how(&s, &d);
+        let pid = d
+            .process
+            .as_ref()
+            .filter(|_| !how.contains("pid"))
+            .map_or(String::new(), |p| format!(", pid {}", p.pid));
+        eprintln!(
+            "quai-dash: {} node ({how}{pid}) at {}",
+            kind.name(),
+            zone.url
+        );
+        eprintln!(
+            "quai-dash: logs {} · stratum {} · geo {geo_text}",
+            log_file
+                .as_ref()
+                .map_or("none".to_string(), |f| f.display().to_string()),
+            stratum.as_ref().map_or("none", |e| e.url.as_str()),
+        );
+        for n in &d.notes {
+            eprintln!("quai-dash: note: {n}");
+        }
         let cfg = collect::Config {
-            label: cli.label.clone(),
+            label: s.v.label.clone().unwrap_or_default(),
+            kind,
+            kind_how: kind_how(&s, &d),
             zone,
             region,
             prime,
             compare,
             geo,
             here,
-            stall_secs: cli.stall_secs,
-            stratum: match &cli.stratum_api {
-                Some(u) => Some(endpoint(u)?),
-                None => None,
-            },
+            stall_secs: s.v.stall_secs.unwrap_or(60),
+            stratum,
+            // A PID the user gave pins the peer map; a detected one would
+            // go stale when the node restarts, so the port is asked again.
+            pid: s.v.node_pid.filter(|_| s.explicit("node_pid")),
         };
-        let s = state.clone();
-        std::thread::spawn(move || collect::run(cfg, s));
+        let st = state.clone();
+        std::thread::spawn(move || collect::run(cfg, st));
     }
     match cli.cmd {
-        Cmd::Web { listen } => {
-            eprintln!("quai-dash: watching {} — open http://{listen}/", cli.rpc);
+        Cmd::Web => {
+            let listen =
+                s.v.listen
+                    .clone()
+                    .unwrap_or_else(|| config::DEFAULT_LISTEN.into());
+            if !config::is_loopback_listen(&listen) {
+                eprintln!(
+                    "quai-dash: warning: listening on {listen}, beyond this host; the dashboard has no authentication, and the node's logs, peers and miners become visible to anyone who can reach it"
+                );
+            }
+            eprintln!("quai-dash: open http://{listen}/");
             web::serve(&listen, state)
         }
-        Cmd::Tui {
-            theme,
-            graphics,
-            notify,
-        } => {
-            let kind = term::detect();
-            let graphics = match graphics {
-                Graphics::Auto => kind.graphics(),
+        Cmd::Tui => {
+            let term = term::detect();
+            let graphics = match s.v.graphics.unwrap_or(Graphics::Auto) {
+                Graphics::Auto => term.graphics(),
                 Graphics::On => true,
                 Graphics::Off => false,
             };
             tui::run(
                 state,
-                theme,
+                s.v.theme.unwrap_or(Theme::Ghost),
                 tui::Options {
                     graphics,
-                    kind,
-                    notify,
+                    kind: term,
+                    notify: s.v.notify == Some(true),
                 },
             )
         }
+        Cmd::Config => Ok(()),
         Cmd::Record {
             out,
             size,

@@ -4,14 +4,9 @@
 //! needs no node support, and sees TCP peers only (QUIC runs over one UDP
 //! socket). Linux only; elsewhere the list stays empty with a note.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::Path;
-
-use serde_json::{Value, json};
-
-use crate::rpc::Endpoint;
-use crate::state::Place;
 
 /// One TCP connection of the node process.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,8 +92,46 @@ fn socket_inodes(pid: u32) -> HashSet<u64> {
     out
 }
 
-/// The node's TCP peers, or why they can't be read.
-pub fn connections(rpc_ports: &[u16]) -> Result<Vec<Conn>, String> {
+/// Who listens on a TCP port of this host.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Listener {
+    /// Nothing does.
+    None,
+    /// A process this user can't inspect (another user's, without root).
+    Hidden,
+    /// The process with this PID.
+    Pid(u32),
+}
+
+/// The process listening on `port`, found through `/proc/net/tcp{,6}` and
+/// each process's `fd` links (readable for this user's processes only).
+pub fn listener(port: u16) -> Listener {
+    let mut all = sockets("/proc/net/tcp");
+    all.extend(sockets("/proc/net/tcp6"));
+    let Some(inode) = all
+        .iter()
+        .find(|s| s.state == LISTEN && s.local.1 == port)
+        .map(|s| s.inode)
+    else {
+        return Listener::None;
+    };
+    if let Ok(procs) = std::fs::read_dir("/proc") {
+        for p in procs.flatten() {
+            let Some(n) = p.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
+                continue;
+            };
+            if socket_inodes(n).contains(&inode) {
+                return Listener::Pid(n);
+            }
+        }
+    }
+    Listener::Hidden
+}
+
+/// The node's TCP peers, or why they can't be read. `pid` pins the node
+/// process; otherwise it is whoever listens on the zone RPC port (looked
+/// up on every call, so a restarted node is found again).
+pub fn connections(rpc_ports: &[u16], pid: Option<u32>) -> Result<Vec<Conn>, String> {
     if !Path::new("/proc/net/tcp").exists() {
         return Err("peer map needs Linux /proc".into());
     }
@@ -107,27 +140,28 @@ pub fn connections(rpc_ports: &[u16]) -> Result<Vec<Conn>, String> {
     let Some(&zone_port) = rpc_ports.first() else {
         return Err("no RPC port".into());
     };
-    let listen_inode = all
-        .iter()
-        .find(|s| s.state == LISTEN && s.local.1 == zone_port)
-        .map(|s| s.inode)
-        .ok_or_else(|| {
-            format!("nothing listens on port {zone_port} here; run quai-dash on the node's host")
-        })?;
-    let mut pid = None;
-    if let Ok(procs) = std::fs::read_dir("/proc") {
-        for p in procs.flatten() {
-            let Some(n) = p.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
-                continue;
-            };
-            if socket_inodes(n).contains(&listen_inode) {
-                pid = Some(n);
-                break;
+    let pid = match pid {
+        Some(p) => p,
+        None => match listener(zone_port) {
+            Listener::Pid(p) => p,
+            Listener::None => {
+                return Err(format!(
+                    "nothing listens on port {zone_port} here; run quai-dash on the node's host"
+                ));
             }
-        }
-    }
-    let pid = pid.ok_or("the node process is not readable (run quai-dash as the node's user)")?;
+            Listener::Hidden => {
+                return Err(
+                    "the node process is not readable (run quai-dash as the node's user)".into(),
+                );
+            }
+        },
+    };
     let mine = socket_inodes(pid);
+    if mine.is_empty() {
+        return Err(format!(
+            "cannot read /proc/{pid}/fd (run quai-dash as the node's user)"
+        ));
+    }
     let listening: HashSet<u16> = all
         .iter()
         .filter(|s| s.state == LISTEN && mine.contains(&s.inode))
@@ -159,100 +193,6 @@ pub fn connections(rpc_ports: &[u16]) -> Result<Vec<Conn>, String> {
         });
     }
     Ok(out)
-}
-
-/// IP geolocation: a local MaxMind database, or ip-api.com (opt-in).
-pub enum Geo {
-    /// Disabled.
-    Off,
-    /// GeoLite2/GeoIP2 City database.
-    Db(maxminddb::Reader<Vec<u8>>),
-    /// ip-api.com batch lookups (sends peer IPs to ip-api.com).
-    Online(Endpoint),
-}
-
-impl Geo {
-    /// `off`, `db` or `online`.
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Geo::Off => "off",
-            Geo::Db(_) => "db",
-            Geo::Online(_) => "online",
-        }
-    }
-
-    /// Looks up `ips` not in `cache`, filling it (failures cache as `None`).
-    pub fn resolve(&self, ips: &[IpAddr], cache: &mut HashMap<IpAddr, Option<Place>>) {
-        let todo: Vec<IpAddr> = ips
-            .iter()
-            .filter(|ip| !cache.contains_key(ip))
-            .copied()
-            .collect();
-        if todo.is_empty() {
-            return;
-        }
-        match self {
-            Geo::Off => {}
-            Geo::Db(r) => {
-                for ip in todo {
-                    cache.insert(ip, lookup_db(r, ip));
-                }
-            }
-            Geo::Online(ep) => {
-                // ip-api allows 100 per batch and 15 batches a minute.
-                for chunk in todo.chunks(100).take(2) {
-                    let body = Value::Array(
-                        chunk
-                            .iter()
-                            .map(|ip| json!({"query": ip.to_string(), "fields": "status,lat,lon,city,countryCode,query"}))
-                            .collect(),
-                    )
-                    .to_string();
-                    let Ok(resp) = ep.post(&body) else { return };
-                    let Ok(Value::Array(rows)) = serde_json::from_slice::<Value>(&resp) else {
-                        return;
-                    };
-                    for (ip, row) in chunk.iter().zip(rows) {
-                        let place = (row["status"] == "success").then(|| Place {
-                            lat: row["lat"].as_f64().unwrap_or(0.0),
-                            lon: row["lon"].as_f64().unwrap_or(0.0),
-                            city: row["city"].as_str().unwrap_or("").to_string(),
-                            country: row["countryCode"].as_str().unwrap_or("").to_string(),
-                        });
-                        cache.insert(*ip, place);
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn lookup_db(r: &maxminddb::Reader<Vec<u8>>, ip: IpAddr) -> Option<Place> {
-    let res = r.lookup(ip).ok()?;
-    let city: maxminddb::geoip2::City = res.decode().ok()??;
-    let loc = city.location;
-    Some(Place {
-        lat: loc.latitude?,
-        lon: loc.longitude?,
-        city: city
-            .city
-            .names
-            .english
-            .map(str::to_string)
-            .unwrap_or_default(),
-        country: city
-            .country
-            .iso_code
-            .map(str::to_string)
-            .unwrap_or_default(),
-    })
-}
-
-/// Opens a MaxMind database.
-pub fn open_db(path: &Path) -> Result<Geo, String> {
-    maxminddb::Reader::open_readfile(path)
-        .map(Geo::Db)
-        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 #[cfg(test)]

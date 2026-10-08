@@ -509,6 +509,8 @@ pub fn run(state: Arc<Mutex<State>>) {
     if let Ok(mut st) = state.lock() {
         st.node.label = "DEMO NODE".into();
         st.node.rpc = "demo".into();
+        st.node.kind = "rs-quai".into();
+        st.node.kind_how = "demo".into();
         st.node.location = "Cyprus-1".into();
         st.node.chain_id = Some(9);
         st.node.online = true;

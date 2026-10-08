@@ -50,6 +50,10 @@ pub struct NodeInfo {
     pub label: String,
     /// Zone RPC endpoint.
     pub rpc: String,
+    /// Node implementation: `rs-quai`, `go-quai` or `unknown`.
+    pub kind: String,
+    /// How the kind was found (`process rs-quai (pid 4242)`, `set by flag`, …).
+    pub kind_how: String,
     /// Location name, e.g. `Cyprus-1`.
     pub location: String,
     /// `quai_chainId`.

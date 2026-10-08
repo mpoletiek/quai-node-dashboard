@@ -362,7 +362,7 @@ table.wt { width: 100%; border-collapse: collapse; font-size: 12px; font-variant
     <div class="brand"><span class="mark" id="mark">QUAI DIVE</span><span class="jp" id="markjp">電脳 監視</span></div>
     <div class="who">
       <span class="chip" id="status"><span class="dot"></span><span id="statustext">CONNECTING</span></span>
-      <span id="nodelabel">—</span><span id="nodeloc"></span>
+      <span id="nodelabel">—</span><span class="chip" id="nodekind" hidden></span><span id="nodeloc"></span>
       <a class="chip" id="tuilink" href="tui.html" hidden>Terminal version →</a>
     </div>
     <div class="spacer"></div>
@@ -776,7 +776,7 @@ class Demo {
         base_block_reward: "70.4023", estimated_block_reward: "105.3384", workshare_reward: "11.7042", quai_supply: "1124728606", avg_tx_fees: "17.4680" };
     return {
       now_ms: now,
-      node: { label: "DEMO NODE", rpc: "demo", location: "Cyprus-1", chain_id: 9, online: true, error: null, log_file: "nodelogs/global.log" },
+      node: { label: "DEMO NODE", rpc: "demo", kind: "rs-quai", kind_how: "demo", location: "Cyprus-1", chain_id: 9, online: true, error: null, log_file: "nodelogs/global.log" },
       chains: { prime: { number: this.prime, hash: "", timestamp: last.timestamp - (last.order === 0 ? 0 : 9) },
         region: { number: this.region, hash: "", timestamp: last.timestamp - (last.order <= 1 ? 0 : 4) },
         zone: { number: last.number, hash: last.hash, timestamp: last.timestamp } },
@@ -891,6 +891,10 @@ function render(s, full) {
   $("statustext").textContent = isDemo ? "DEMO DATA" : s.node.online ? "LIVE" : "OFFLINE";
   $("tuilink").hidden = !demo;
   $("nodelabel").textContent = s.node.label;
+  const nk = $("nodekind");
+  nk.hidden = !s.node.kind;
+  nk.textContent = (s.node.kind || "").toUpperCase();
+  nk.title = s.node.kind_how ? "Node kind: " + s.node.kind_how : "";
   $("nodeloc").textContent = (s.node.location ? s.node.location + " · " : "") + (demo ? "simulated" : s.node.rpc);
   const zone = s.chains.zone;
   const h = $("height"); h.dataset.scr = "1";
@@ -927,7 +931,7 @@ function render(s, full) {
   $("pin").textContent = s.peers.inbound || "0";
   $("pout").textContent = s.peers.outbound || "0";
   $("ploc").textContent = s.peers.list.filter((q) => q.place).length + "/" + s.peers.list.length;
-  const note = s.peers.note || (s.peers.list.length && s.peers.geo === "off" ? "Peer locations are off: start quai-dash with --geoip-db <GeoLite2-City.mmdb> or --geoip-online." : "");
+  const note = s.peers.note || (s.peers.list.length && s.peers.geo === "off" ? "Peer locations are off (--geoip off). Use a GeoLite2 City database (--geoip-db) or --geoip online." : "");
   $("mapnote").hidden = !note; $("mapnote").textContent = note;
   // Economy.
   $("e-base").textContent = last ? gwei(last.base_fee) : "—";
@@ -957,7 +961,7 @@ function render(s, full) {
     $("syncsub").innerHTML = "<span>5 s target vs measured average</span><span>Add <b>--compare URL</b> to check every block against a second node.</span>";
   }
   // Logs.
-  $("logfile").textContent = s.node.log_file ? s.node.log_file.split("/").slice(-2).join("/") : "start with --logs <nodelogs dir>";
+  $("logfile").textContent = s.node.log_file ? s.node.log_file.split("/").slice(-2).join("/") : "no log found: set --logs <nodelogs dir>";
   if (!paused) appendLogs(s.logs);
   // Events.
   renderEvents(s.events);
@@ -987,7 +991,7 @@ function renderStratum(s) {
   if (!st || (!st.online && !st.workers.length)) {
     off.hidden = false; body.hidden = true;
     off.innerHTML = !st
-      ? "No stratum API. On the node's host, run quai-dash with <code>--stratum-api http://127.0.0.1:3336</code> to see every miner and worker mining to this node (rs-quai and go-quai serve it with <code>--node.stratum-enabled</code>)."
+      ? "No stratum API found. On the node's host, quai-dash finds it on port 3336, or set <code>--stratum-api URL</code>, to see every miner and worker mining to this node (rs-quai and go-quai serve it with <code>--node.stratum-enabled</code>)."
       : "Stratum API unreachable at <code>" + esc(st.api) + "</code>: " + esc(st.error || "no answer") + ".";
     $("mineaside").textContent = "";
     return;
@@ -1057,7 +1061,7 @@ function appendLogs(lines) {
   box.appendChild(frag);
   while (box.childElementCount > 400) box.firstElementChild.remove();
   if (atBottom || firstLoad) box.scrollTop = box.scrollHeight;
-  if (!box.childElementCount) box.innerHTML = '<div class="empty">No log lines yet. Run quai-dash with --logs pointing at the node\'s nodelogs directory.</div>';
+  if (!box.childElementCount) box.innerHTML = '<div class="empty">No log lines yet. quai-dash follows the node\'s nodelogs when it can read them (run it as the node\'s user), or set --logs.</div>';
   else box.querySelector(".empty")?.remove();
 }
 function relog() { lastSeq = 0; $("log").replaceChildren(); if (lastState) appendLogs(lastState.logs); }

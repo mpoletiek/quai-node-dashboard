@@ -1,0 +1,44 @@
+# quai-dash configuration (TOML).
+#
+# quai-dash reads the first of these that exists, or the file given with
+# --config / QUAI_DASH_CONFIG:
+#   $XDG_CONFIG_HOME/quai-dash/config.toml
+#   ~/.config/quai-dash/config.toml
+#   /etc/quai-dash/config.toml
+#
+# Every key is optional. A command-line flag (--stall-secs) or environment
+# variable (QUAI_DASH_STALL_SECS) overrides the file; the file overrides
+# what quai-dash detects on the host, which overrides the defaults.
+# `quai-dash config` shows the effective settings and where each came from.
+
+# The node. Detected when unset: the process listening on the zone RPC
+# port gives the kind, the nodelogs directory and the PID for the peer map.
+# rpc = "http://127.0.0.1:9200"         # zone JSON-RPC
+# region = "http://127.0.0.1:9002"      # default: zone host, port 9002
+# prime = "http://127.0.0.1:9001"       # default: zone host, port 9001
+# node_kind = "auto"                    # auto | rs-quai | go-quai
+# node_pid = 12345                      # pin the peer map to this process
+# logs = "~/node/nodelogs"              # a nodelogs directory or a log file; "off"
+# stratum_api = "http://127.0.0.1:3336" # the node's stratum API; "off"
+
+# What the dashboard shows.
+# label = "QUAI NODE"
+# compare = "GO-QUAI=http://10.0.0.12:9200"   # check blocks against a second node
+# here = "50.1,8.7"                   # this node on the map (LAT,LON)
+# stall_secs = 60
+
+# Peer locations: "auto" uses a GeoLite2/GeoIP2 City database if one is
+# found (/usr/share/GeoIP, /var/lib/GeoIP, ~/.local/share/GeoIP), else
+# ip-api.com, which receives the peers' IP addresses. "off" disables it.
+# geoip = "auto"                        # auto | db | online | off
+# geoip_db = "/var/lib/GeoIP/GeoLite2-City.mmdb"
+
+# Web dashboard. It has no authentication: keep it on loopback and use an
+# SSH tunnel, unless you mean to show the node's logs, peers and miners
+# to the network.
+# listen = "127.0.0.1:8090"
+
+# Terminal dashboard.
+# theme = "ghost"                       # ghost | angel
+# graphics = "auto"                     # auto | on | off
+# notify = false
