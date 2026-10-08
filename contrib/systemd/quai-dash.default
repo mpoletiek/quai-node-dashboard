@@ -1,0 +1,12 @@
+# Environment for the quai-dash service (systemd: /etc/default/quai-dash,
+# or ~/.config/quai-dash/env for the --user unit).
+#
+# Any option as a QUAI_DASH_* variable (see `quai-dash --help`); these
+# override the config file. Plain KEY=value lines; quote values with spaces.
+#QUAI_DASH_LABEL="MY NODE"
+#QUAI_DASH_LISTEN=127.0.0.1:8090
+#QUAI_DASH_GEOIP=off
+#QUAI_DASH_CONFIG=/etc/quai-dash/config.toml
+
+# Extra arguments for `quai-dash web`, split on whitespace.
+QUAI_DASH_ARGS=

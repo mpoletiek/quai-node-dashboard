@@ -1,0 +1,18 @@
+# /etc/conf.d/quai-dash: settings for the quai-dash OpenRC service.
+
+# The user quai-dash runs as. To read the node's logs and its /proc
+# entries (the peer map) it must be the node's own user (or root).
+QUAI_DASH_USER="quai-dash"
+
+# Extra arguments for `quai-dash web`.
+QUAI_DASH_ARGS=""
+
+# Where its output goes.
+#QUAI_DASH_LOG="/var/log/quai-dash.log"
+
+# Any option as an exported QUAI_DASH_* variable (see `quai-dash --help`);
+# these override the config file.
+#export QUAI_DASH_LABEL="MY NODE"
+#export QUAI_DASH_LISTEN="127.0.0.1:8090"
+#export QUAI_DASH_GEOIP="off"
+#export QUAI_DASH_CONFIG="/etc/quai-dash/config.toml"

@@ -1,0 +1,32 @@
+#!/sbin/openrc-run
+# quai-dash web dashboard for a Quai node (OpenRC). Settings live in
+# /etc/conf.d/quai-dash and the config file (~USER/.config/quai-dash/
+# config.toml, else /etc/quai-dash/config.toml). Installed by
+# scripts/install-service.sh.
+
+description="quai-dash web dashboard for a Quai node"
+
+: "${QUAI_DASH_USER:=quai-dash}"
+: "${QUAI_DASH_BIN:=/usr/local/bin/quai-dash}"
+: "${QUAI_DASH_LOG:=/var/log/quai-dash.log}"
+
+command="${QUAI_DASH_BIN}"
+command_args="web ${QUAI_DASH_ARGS}"
+command_user="${QUAI_DASH_USER}"
+# supervise-daemon restarts quai-dash when it exits unexpectedly.
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=10
+respawn_period=600
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="${QUAI_DASH_LOG}"
+error_log="${QUAI_DASH_LOG}"
+
+depend() {
+	need net
+	after rs-quai go-quai
+}
+
+start_pre() {
+	checkpath --file --owner "${QUAI_DASH_USER}" --mode 0640 "${QUAI_DASH_LOG}"
+}

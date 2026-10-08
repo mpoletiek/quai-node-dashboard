@@ -1,0 +1,33 @@
+# quai-dash web dashboard as a systemd user service (installed by
+# scripts/install-service.sh --user as
+# ~/.config/systemd/user/quai-dash.service):
+#   systemctl --user enable --now quai-dash.service
+# It runs as you, so it reads the node's logs and /proc when you are the
+# node's user. To keep it running after you log out:
+#   loginctl enable-linger "$USER"
+#
+# Settings: ~/.config/quai-dash/env (QUAI_DASH_* variables,
+# QUAI_DASH_ARGS) and ~/.config/quai-dash/config.toml.
+
+[Unit]
+Description=quai-dash web dashboard for a Quai node
+Documentation=https://github.com/mpoletiek/quai-node-dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/quai-dash/env
+ExecStart=%h/.local/bin/quai-dash web $QUAI_DASH_ARGS
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=default.target
