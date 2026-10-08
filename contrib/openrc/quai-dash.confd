@@ -7,9 +7,9 @@ QUAI_DASH_USER="quai-dash"
 # Extra arguments for `quai-dash web`.
 QUAI_DASH_ARGS=""
 
-# Where its output goes. Default: ~USER/.local/state/quai-dash/quai-dash.log
-# (/var/log/quai-dash.log for a user without a home).
-#QUAI_DASH_LOG="/var/log/quai-dash.log"
+# Where its output goes (default /var/log/quai-dash/quai-dash.log). Another
+# path must be in a directory QUAI_DASH_USER can already write.
+#QUAI_DASH_LOG="/var/log/quai-dash/quai-dash.log"
 
 # Any option as an exported QUAI_DASH_* variable (see `quai-dash --help`);
 # these override the config file.

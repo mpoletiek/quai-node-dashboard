@@ -20,7 +20,8 @@ Installs the quai-dash binary and a service that runs `quai-dash web`.
 
 Options:
   --init systemd|openrc  init system (default: detected)
-  --run-as USER          user the service runs as (default: you). It must
+  --run-as USER          user the service runs as (default: you; root only
+                         when named). It must
                          be the node's user to read the node's logs and its
                          /proc entries for the peer map. `--run-as quai-dash`
                          creates that system user if it is missing.
@@ -105,7 +106,10 @@ if [ "$USER_MODE" = 1 ]; then
 	RUN_AS="$ME"
 	: "${PREFIX:=$HOME/.local}"
 else
-	: "${RUN_AS:=${SUDO_USER:-$ME}}"
+	if [ -z "$RUN_AS" ]; then
+		RUN_AS="${SUDO_USER:-$ME}"
+		[ "$RUN_AS" != root ] || die "the service would run as root: pass --run-as USER (the node's user), or --run-as root if you mean it"
+	fi
 	: "${PREFIX:=/usr/local}"
 fi
 case "$PREFIX" in
@@ -165,24 +169,21 @@ else
 fi
 CONFIG="$CFG_DIR/config.toml"
 
-# Output goes to the run-as user's hidden state directory. A user without
-# a home (the quai-dash system user) logs to /var/log (OpenRC) or the
-# journal (systemd).
-RUN_HOME="$(getent passwd "$RUN_AS" 2>/dev/null | cut -d: -f6 || true)"
-case "$RUN_HOME" in
-"" | / | /nonexistent) RUN_HOME="" ;;
-esac
+# Output: a system unit logs to the journal and OpenRC to
+# /var/log/quai-dash/ (both opened by root or as the user in root-owned
+# directories); only the --user unit, which runs entirely as you, logs to
+# your hidden state directory.
 LOG_DIR=""
 LOG_FILE=""
-if [ -n "$RUN_HOME" ]; then
-	LOG_DIR="$RUN_HOME/.local/state/quai-dash"
+if [ "$USER_MODE" = 1 ]; then
+	LOG_DIR="$HOME/.local/state/quai-dash"
 	LOG_FILE="$LOG_DIR/quai-dash.log"
 fi
-# systemd cannot name another user's home in a system unit, so the
-# template instance gets a drop-in with the path.
-DROPIN=""
+# Older installs gave each systemd instance a drop-in that sent output to
+# the run-as user's home; systemd opens that path as root, so it goes.
+OLD_DROPIN=""
 if [ "$INIT" = systemd ] && [ "$USER_MODE" = 0 ]; then
-	DROPIN="/etc/systemd/system/quai-dash@$RUN_AS.service.d/log.conf"
+	OLD_DROPIN="/etc/systemd/system/quai-dash@$RUN_AS.service.d/log.conf"
 fi
 
 # --- Actions ----------------------------------------------------------------
@@ -222,21 +223,10 @@ place() {
 	run $sudo install -D -m "$mode" "$src" "$dest"
 }
 
-# The log directory and its missing parents, owned by the run-as user
-# (OpenRC's start_pre does the same at each start).
+# The --user unit's log directory (made as you: no root involved).
 make_log_dir() {
-	local sudo="${SUDO}" group dir missing="" d
-	[ "$USER_MODE" = 1 ] && sudo=""
 	[ -d "$LOG_DIR" ] && [ "$DRY_RUN" = 0 ] && return
-	group="$(id -gn "$RUN_AS" 2>/dev/null || echo "$RUN_AS")"
-	dir="$LOG_DIR"
-	while [ "$dir" != "$RUN_HOME" ] && [ ! -d "$dir" ]; do
-		missing="$dir $missing"
-		dir="${dir%/*}"
-	done
-	for d in $missing; do
-		run $sudo install -d -o "$RUN_AS" -g "$group" -m 0700 "$d"
-	done
+	run mkdir -p -m 0700 "$LOG_DIR"
 }
 
 remove() {
@@ -262,7 +252,7 @@ plan() {
 	elif [ "$INIT" = systemd ]; then
 		echo "  logs         the journal (journalctl -u $SERVICE)"
 	else
-		echo "  logs         /var/log/quai-dash.log"
+		echo "  logs         /var/log/quai-dash/quai-dash.log"
 	fi
 	if [ -n "$SUDO" ] && [ "$USER_MODE" = 0 ]; then
 		echo "  privileges   commands marked sudo run as root"
@@ -277,12 +267,10 @@ install_service() {
 	fi
 	place "$BINARY" "$BIN" 0755
 	place "$CONTRIB/config.toml" "$CONFIG" 0644 1
-	if [ -n "$LOG_DIR" ] && [ "$INIT" = systemd ]; then
-		make_log_dir
-		if [ -n "$DROPIN" ]; then
-			printf '[Service]\nStandardOutput=append:%s\nStandardError=append:%s\n' "$LOG_FILE" "$LOG_FILE" >"$TMP/log.conf"
-			place "$TMP/log.conf" "$DROPIN" 0644 0 "the run-as user's log path"
-		fi
+	[ -z "$LOG_DIR" ] || make_log_dir
+	if [ -n "$OLD_DROPIN" ] && [ -e "$OLD_DROPIN" ]; then
+		remove "$OLD_DROPIN"
+		run $SUDO rmdir "${OLD_DROPIN%/*}" || true
 	fi
 	if [ "$INIT" = systemd ]; then
 		if [ "$USER_MODE" = 1 ]; then
@@ -352,7 +340,7 @@ uninstall_service() {
 	fi
 	remove "$BIN"
 	echo
-	echo "Kept $CONFIG and $ENV_FILE$([ -n "$LOG_DIR" ] && echo " and $LOG_DIR"); delete them by hand if you no longer need them."
+	echo "Kept $CONFIG and $ENV_FILE$([ -n "$LOG_DIR" ] && echo " and $LOG_DIR")$([ "$INIT" = openrc ] && echo " and /var/log/quai-dash"); delete them by hand if you no longer need them."
 }
 
 plan

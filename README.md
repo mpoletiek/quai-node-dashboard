@@ -258,7 +258,7 @@ scripts/install-service.sh --uninstall
 | Option | |
 |---|---|
 | `--init systemd\|openrc` | init system (default: detected from `/run/systemd/system` or `/run/openrc`) |
-| `--run-as USER` | user the service runs as (default: whoever runs the installer; `quai-dash` is created if missing) |
+| `--run-as USER` | user the service runs as (default: whoever runs the installer, never root unless named; `quai-dash` is created if missing) |
 | `--user` | a systemd `--user` unit in `~/.config/systemd/user`, binary in `~/.local/bin` (OpenRC: not supported; use the system service with `--run-as` yourself) |
 | `--prefix DIR` | binary in `DIR/bin` (default `/usr/local`, `~/.local` with `--user`) |
 | `--binary FILE` | binary to install (default `target/release/quai-dash`) |
@@ -291,14 +291,11 @@ capabilities, `@system-service` system calls) and still reads the
 node's logs and `/proc` and reaches the network for RPC and
 geolocation.
 
-The service's output goes to the run-as user's hidden state directory,
-`~/.local/state/quai-dash/quai-dash.log` (the installer and the OpenRC
-script create it, owned by that user). For systemd the installer writes
-the path into a drop-in, `/etc/systemd/system/quai-dash@USER.service.d/log.conf`;
-the user unit names `%h` directly. A user without a home (the dedicated
-`quai-dash` user) logs to `/var/log/quai-dash.log` under OpenRC and to
-the journal under systemd. `QUAI_DASH_LOG` in `/etc/conf.d/quai-dash`
-moves the OpenRC log elsewhere.
+The service's output goes to the journal under systemd
+(`journalctl -u quai-dash@USER`), to `/var/log/quai-dash/quai-dash.log`
+under OpenRC (`QUAI_DASH_LOG` in `/etc/conf.d/quai-dash` moves it), and,
+for the `--user` unit, to `~/.local/state/quai-dash/quai-dash.log`.
+Nothing running as root writes inside the run-as user's home.
 
 ## Modern terminals
 
