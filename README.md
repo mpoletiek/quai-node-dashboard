@@ -364,7 +364,8 @@ through a scripted tour on demo data (both looks, map, stratum, log, help) and
 saves the changed cells per frame; `web/tui.html` plays such a file back
 in a browser.
 
-`web/index.html` is a self-contained page. When no quai-dash server
+`web/index.html` is a self-contained page (its fonts are in
+`web/fonts`, next to it; without them it falls back to system fonts). When no quai-dash server
 answers (for example, opened on its own), it runs on clearly labeled
 demo data, and keeps checking for a server every 10 s. A page that has
 shown a live node never switches to demo data: when the server stops
@@ -376,4 +377,10 @@ The world map is Natural Earth 110m land (public domain, via world-atlas
 
 ## Licence
 
-MIT (see `LICENSE`). Moved out of rs-quai (`crates/rsq-dash`) with its history on 2026-10-08.
+MIT (see `LICENSE`). The fonts in `web/fonts` (Barlow Condensed, Chakra
+Petch, Share Tech Mono, Shippori Mincho B1, Noto Sans JP, JetBrains
+Mono) are Google Fonts' web subsets, unmodified, under the SIL Open Font
+License 1.1: see the `OFL-*.txt` files there. The dashboard serves them
+itself and loads nothing from other sites.
+
+Moved out of rs-quai (`crates/rsq-dash`) with its history on 2026-10-08.

@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use crate::rpc::Deadline;
 use crate::state::State;
 
-/// The page (inline CSS/JS; Google Fonts with fallbacks). `web/index.html`
+/// The page (inline CSS/JS; fonts from `/fonts/`). `web/index.html`
 /// is a fragment (title, style, body content, script) so it can also be
 /// published on its own, where it runs on demo data; here it gets a full
 /// document around it.
@@ -25,6 +25,55 @@ pub const INDEX_HTML: &str = concat!(
     include_str!("../web/index.html"),
     "\n</html>\n"
 );
+
+/// The page's fonts (`web/fonts`, SIL Open Font License), served from
+/// `/fonts/<name>`: the dashboard loads nothing from other sites.
+const FONTS: &[(&str, &[u8])] = &[
+    (
+        "barlow-condensed-500.woff2",
+        include_bytes!("../web/fonts/barlow-condensed-500.woff2"),
+    ),
+    (
+        "barlow-condensed-600.woff2",
+        include_bytes!("../web/fonts/barlow-condensed-600.woff2"),
+    ),
+    (
+        "barlow-condensed-700.woff2",
+        include_bytes!("../web/fonts/barlow-condensed-700.woff2"),
+    ),
+    (
+        "chakra-petch-400.woff2",
+        include_bytes!("../web/fonts/chakra-petch-400.woff2"),
+    ),
+    (
+        "chakra-petch-500.woff2",
+        include_bytes!("../web/fonts/chakra-petch-500.woff2"),
+    ),
+    (
+        "chakra-petch-600.woff2",
+        include_bytes!("../web/fonts/chakra-petch-600.woff2"),
+    ),
+    (
+        "share-tech-mono-400.woff2",
+        include_bytes!("../web/fonts/share-tech-mono-400.woff2"),
+    ),
+    (
+        "shippori-mincho-b1-800.woff2",
+        include_bytes!("../web/fonts/shippori-mincho-b1-800.woff2"),
+    ),
+    (
+        "shippori-mincho-b1-800-jp.woff2",
+        include_bytes!("../web/fonts/shippori-mincho-b1-800-jp.woff2"),
+    ),
+    (
+        "noto-sans-jp-jp.woff2",
+        include_bytes!("../web/fonts/noto-sans-jp-jp.woff2"),
+    ),
+];
+
+/// What the page may load: only this server (fonts, `/api/state`), and
+/// its own inline script and style. Links out (the explorer) still open.
+const CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// Connections handled at once; more are closed unanswered.
 const MAX_CONNS: usize = 16;
@@ -177,9 +226,10 @@ fn host_allowed(host: &str, hostname: &str) -> bool {
             && (name == hostname || name.strip_suffix(".local") == Some(hostname)))
 }
 
-/// A reply body: the page, built once, or text built per request.
+/// A reply body: built in (the page, fonts), shared (the state's JSON),
+/// or text built per request.
 enum Body {
-    Static(&'static str),
+    Static(&'static [u8]),
     Shared(Arc<String>),
     Text(String),
 }
@@ -187,7 +237,7 @@ enum Body {
 impl Body {
     fn bytes(&self) -> &[u8] {
         match self {
-            Body::Static(s) => s.as_bytes(),
+            Body::Static(b) => b,
             Body::Shared(s) => s.as_bytes(),
             Body::Text(s) => s.as_bytes(),
         }
@@ -213,12 +263,22 @@ fn route(req: Option<&Request>, shared: &Shared) -> (u16, &'static str, Body) {
         );
     }
     match req.path.as_str() {
-        "/" | "/index.html" => (200, "text/html; charset=utf-8", Body::Static(INDEX_HTML)),
+        "/" | "/index.html" => (
+            200,
+            "text/html; charset=utf-8",
+            Body::Static(INDEX_HTML.as_bytes()),
+        ),
         "/api/state" => match shared.state_json() {
             Some(json) => (200, "application/json", Body::Shared(json)),
             None => text(503, "state unavailable"),
         },
-        _ => text(404, "not found"),
+        path => match path
+            .strip_prefix("/fonts/")
+            .and_then(|name| FONTS.iter().find(|(n, _)| *n == name))
+        {
+            Some((_, bytes)) => (200, "font/woff2", Body::Static(bytes)),
+            None => text(404, "not found"),
+        },
     }
 }
 
@@ -238,8 +298,19 @@ fn handle(conn: TcpStream, shared: &Shared) -> io::Result<()> {
         _ => "Service Unavailable",
     };
     let body = body.bytes();
+    // Fonts never change within a build; everything else is live.
+    let cache = if ctype == "font/woff2" {
+        "public, max-age=604800"
+    } else {
+        "no-store"
+    };
+    let csp = if ctype.starts_with("text/html") {
+        format!("Content-Security-Policy: {CSP}\r\n")
+    } else {
+        String::new()
+    };
     let head = format!(
-        "HTTP/1.1 {code} {reason}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {code} {reason}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: {cache}\r\n{csp}X-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n",
         body.len()
     );
     let mut w = io::BufWriter::new(&conn);
@@ -255,6 +326,25 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+
+    #[test]
+    fn page_loads_only_bundled_fonts() {
+        // Every font the page names is served, and nothing is fetched from
+        // elsewhere.
+        let urls: Vec<&str> = INDEX_HTML
+            .split("url(\"fonts/")
+            .skip(1)
+            .filter_map(|r| r.split('"').next())
+            .collect();
+        assert_eq!(urls.len(), 10);
+        for u in urls {
+            assert!(
+                FONTS.iter().any(|(n, b)| *n == u && b.starts_with(b"wOF2")),
+                "{u}"
+            );
+        }
+        assert!(!INDEX_HTML.contains("googleapis") && !INDEX_HTML.contains("gstatic"));
+    }
 
     #[test]
     fn hosts() {
@@ -305,9 +395,9 @@ mod tests {
     fn get(port: u16, raw: &str) -> String {
         let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
         c.write_all(raw.as_bytes()).unwrap();
-        let mut out = String::new();
-        let _ = c.read_to_string(&mut out);
-        out
+        let mut out = Vec::new();
+        let _ = c.read_to_end(&mut out);
+        String::from_utf8_lossy(&out).into_owned()
     }
 
     #[test]
@@ -339,6 +429,23 @@ mod tests {
             get(port, "GET /etc/passwd HTTP/1.1\r\nHost: localhost\r\n\r\n")
                 .starts_with("HTTP/1.1 404")
         );
+        assert!(
+            get(
+                port,
+                "GET /fonts/../web.rs HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            )
+            .starts_with("HTTP/1.1 404")
+        );
+        let font = get(
+            port,
+            "GET /fonts/chakra-petch-500.woff2 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        assert!(
+            font.starts_with("HTTP/1.1 200")
+                && font.contains("font/woff2")
+                && font.contains("max-age")
+        );
+        assert!(ok.contains("Content-Security-Policy: default-src 'none'"));
 
         // Idle connections fill the slots; one more is closed unanswered,
         // and the server answers again once they time out.
