@@ -114,15 +114,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          sparse-checkout: CHANGELOG.md
+          sparse-checkout: |
+            CHANGELOG.md
+            install.sh
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: quai-dash-*
           merge-multiple: true
           path: dist
+      # The installer goes with the release too, for installs pinned to it:
+      # …/releases/download/vX.Y.Z/install.sh
       - name: Checksums
-        run: cd dist && sha256sum -- *.tar.gz | tee SHA256SUMS
+        run: |
+          cp install.sh dist/
+          cd dist && sha256sum -- *.tar.gz install.sh | tee SHA256SUMS
       # The release notes are the version's CHANGELOG section (without
       # its heading and link lines); without one, GitHub's generated notes.
       - name: Release notes

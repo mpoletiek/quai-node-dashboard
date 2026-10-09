@@ -41,10 +41,40 @@ The terminal shots are frames of `quai-dash record`, played back with
 
 ## Install
 
-Each [release](https://github.com/mpoletiek/quai-node-dashboard/releases)
-has static Linux binaries for x86_64 and aarch64 (no dependencies; any
-distribution). Each archive holds the binary, the service installer,
-`contrib/` and the licenses.
+On the node's host (Linux, x86_64 or aarch64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh | sh
+```
+
+That installs the latest release's static binary to `~/.local/bin` (or
+`/usr/local/bin` as root). To also run it as a service at boot, as the
+node's user (here `node`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh | sh -s -- --service systemd --run-as node
+curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh | sh -s -- --service openrc --run-as node
+```
+
+| Option | |
+|---|---|
+| `--service systemd\|openrc\|user\|auto` | also install a service that runs `quai-dash web` (`user`: a systemd user unit, no root; `auto`: whichever init this host runs). Default: the binary only |
+| `--run-as USER` | user the service runs as: the node's, so it can read the node's logs and `/proc` (default: you) |
+| `--version X` | a release other than the latest, e.g. `0.1.0` |
+| `--prefix DIR` | binary in `DIR/bin` |
+| `--uninstall` | remove the binary (with `--service`, the service too) |
+| `--dry-run` | print every action without doing it |
+
+The installer downloads the release archive for this machine and
+installs nothing unless it matches the release's `SHA256SUMS`. A
+service is set up by the archive's own
+[`scripts/install-service.sh`](#running-as-a-service), which shows its
+plan and uses sudo only when needed. To read the installer before
+running it: `curl -fsSLO https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh`, then `sh install.sh --help`.
+
+**By hand.** Each [release](https://github.com/mpoletiek/quai-node-dashboard/releases)
+has the archives (binary, service installer, `contrib/`, licenses),
+`SHA256SUMS`, and `install.sh` itself:
 
 ```sh
 v=0.1.0 arch=$(uname -m)                   # x86_64 or aarch64
@@ -54,14 +84,15 @@ sha256sum --check --ignore-missing SHA256SUMS
 tar xzf "quai-dash-$v-$arch-linux.tar.gz" && cd "quai-dash-$v-$arch-linux"
 ```
 
-Every archive is also attested as built from this repository by its
-release workflow; with the GitHub CLI, `gh attestation verify
+Every archive is attested as built from this repository by its release
+workflow; with the GitHub CLI, `gh attestation verify
 quai-dash-$v-$arch-linux.tar.gz --repo mpoletiek/quai-node-dashboard`
 checks that.
 
-From source (the toolchain is pinned in `rust-toolchain.toml`; rustup
-fetches it): `cargo install --locked --path .` puts `quai-dash` in
-`~/.cargo/bin`, or `cargo build --release` leaves it in `target/release/`.
+**From source** (the toolchain is pinned in `rust-toolchain.toml`;
+rustup fetches it): `cargo install --locked --path .` puts `quai-dash`
+in `~/.cargo/bin`, or `cargo build --release` leaves it in
+`target/release/`.
 
 ## Quick start
 
@@ -73,8 +104,8 @@ quai-dash tui                              # or the terminal version
 quai-dash config                           # what it found, and why
 ```
 
-(`./quai-dash` from an extracted release archive.) To keep it running,
-install it as a [service](#running-as-a-service).
+To keep it running, install it as a service (`--service` above, or
+[by hand](#running-as-a-service)).
 
 No flags needed: quai-dash finds the node on the zone RPC port, tells
 rs-quai from go-quai, follows its logs, maps its peers (placed on the
@@ -291,9 +322,10 @@ local database, and nothing about them leaves the host:
 
 ## Running as a service
 
-`scripts/install-service.sh` installs the binary and a service that runs
-`quai-dash web` with no flags: detection and the config file supply the
-rest.
+`--service` on the [installer](#install) does all of this. By hand,
+`scripts/install-service.sh` (in a release archive or a checkout)
+installs the binary and a service that runs `quai-dash web` with no
+flags: detection and the config file supply the rest.
 
 ```sh
 cargo build --release                         # from a checkout; a release archive has the binary
