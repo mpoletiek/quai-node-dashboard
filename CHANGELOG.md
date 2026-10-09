@@ -7,6 +7,8 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-09
+
 ### Added
 
 - **One-line install:** `curl -fsSL …/install.sh | sh` installs the latest
@@ -76,5 +78,6 @@ other local users, the network and web pages as untrusted (see
   a frozen dashboard, and both dashboards say STALE or NO SERVER instead
   of showing old data as live.
 
-[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/mpoletiek/quai-node-dashboard/releases/tag/v0.1.0
