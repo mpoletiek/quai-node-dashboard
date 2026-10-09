@@ -1,5 +1,7 @@
 # quai-node-dashboard
 
+[![CI](https://github.com/mpoletiek/quai-node-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/mpoletiek/quai-node-dashboard/actions/workflows/ci.yml)
+
 `quai-dash`: a live monitor for a Quai node, in the browser or the terminal, with two
 looks: **GHOST** (cyan cyberbrain HUD, rotating dot globe) and **ANGEL**
 (orange command center: seven-segment block timer, a three-panel vote on
@@ -37,20 +39,42 @@ All on demo data (`--demo`): the node, peers and miners are invented.
 The terminal shots are frames of `quai-dash record`, played back with
 `web/tui.html`.
 
+## Install
+
+Each [release](https://github.com/mpoletiek/quai-node-dashboard/releases)
+has static Linux binaries for x86_64 and aarch64 (no dependencies; any
+distribution). Each archive holds the binary, the service installer,
+`contrib/` and the licenses.
+
+```sh
+v=0.1.0 arch=$(uname -m)                   # x86_64 or aarch64
+base=https://github.com/mpoletiek/quai-node-dashboard/releases/download/v$v
+curl -LO "$base/quai-dash-$v-$arch-linux.tar.gz" -LO "$base/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+tar xzf "quai-dash-$v-$arch-linux.tar.gz" && cd "quai-dash-$v-$arch-linux"
+```
+
+Every archive is also attested as built from this repository by its
+release workflow; with the GitHub CLI, `gh attestation verify
+quai-dash-$v-$arch-linux.tar.gz --repo mpoletiek/quai-node-dashboard`
+checks that.
+
+From source (the toolchain is pinned in `rust-toolchain.toml`; rustup
+fetches it): `cargo install --locked --path .` puts `quai-dash` in
+`~/.cargo/bin`, or `cargo build --release` leaves it in `target/release/`.
+
 ## Quick start
 
 On the node's host, as the node's user:
 
 ```sh
-cargo install --path .                     # builds quai-dash into ~/.cargo/bin
 quai-dash web                              # then open http://127.0.0.1:8090/
 quai-dash tui                              # or the terminal version
 quai-dash config                           # what it found, and why
 ```
 
-Or `cargo build --release` and run `./target/release/quai-dash` from the
-checkout. The toolchain is pinned in `rust-toolchain.toml` (rustup
-fetches it).
+(`./quai-dash` from an extracted release archive.) To keep it running,
+install it as a [service](#running-as-a-service).
 
 No flags needed: quai-dash finds the node on the zone RPC port, tells
 rs-quai from go-quai, follows its logs, maps its peers (placed on the
@@ -266,7 +290,7 @@ local database, and nothing about them leaves the host:
 rest.
 
 ```sh
-cargo build --release
+cargo build --release                         # from a checkout; a release archive has the binary
 scripts/install-service.sh --dry-run          # shows every action, changes nothing
 scripts/install-service.sh --run-as node      # install, enable and start as user "node"
 scripts/install-service.sh --user             # systemd user unit, no root
@@ -279,7 +303,7 @@ scripts/install-service.sh --uninstall
 | `--run-as USER` | user the service runs as (default: whoever runs the installer, never root unless named; `quai-dash` is created if missing) |
 | `--user` | a systemd `--user` unit in `~/.config/systemd/user`, binary in `~/.local/bin` (OpenRC: not supported; use the system service with `--run-as` yourself) |
 | `--prefix DIR` | binary in `DIR/bin` (default `/usr/local`, `~/.local` with `--user`) |
-| `--binary FILE` | binary to install (default `target/release/quai-dash`) |
+| `--binary FILE` | binary to install (default: the release archive's, else `target/release/quai-dash`, else the one on PATH) |
 | `--uninstall` | stop, disable and remove the service and binary; config and environment files stay |
 | `--force` | overwrite an existing config or environment file (never otherwise) |
 | `--dry-run` | print every action without doing it |

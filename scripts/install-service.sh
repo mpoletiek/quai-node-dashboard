@@ -30,7 +30,8 @@ Options:
   --prefix DIR           install the binary to DIR/bin
                          (default: /usr/local, or ~/.local with --user)
   --binary FILE          the quai-dash binary to install
-                         (default: target/release/quai-dash, else the one on PATH)
+                         (default: the one in a release archive, else
+                         target/release/quai-dash, else the one on PATH)
   --uninstall            stop and remove the service and binary (config and
                          environment files are kept)
   --force                overwrite existing config and environment files
@@ -119,7 +120,10 @@ esac
 BIN="$PREFIX/bin/quai-dash"
 
 if [ "$UNINSTALL" = 0 ] && [ -z "$BINARY" ]; then
-	if [ -x "$REPO/target/release/quai-dash" ]; then
+	if [ -x "$REPO/quai-dash" ]; then
+		# A release archive: the binary sits next to scripts/.
+		BINARY="$REPO/quai-dash"
+	elif [ -x "$REPO/target/release/quai-dash" ]; then
 		BINARY="$REPO/target/release/quai-dash"
 	elif command -v quai-dash >/dev/null 2>&1; then
 		BINARY="$(command -v quai-dash)"

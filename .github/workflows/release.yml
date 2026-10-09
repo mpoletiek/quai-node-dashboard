@@ -1,0 +1,128 @@
+# Static Linux binaries (musl) for x86_64 and aarch64, each built natively.
+#
+# A `v*` tag builds, tests and packages both, attests their provenance
+# (`gh attestation verify`), and opens a draft release with the archives
+# and SHA256SUMS for a person to review and publish. Run by hand
+# (workflow_dispatch), it builds and packages without publishing: a dry
+# run whose archives are left as workflow artifacts.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - arch: aarch64
+            target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      TARGET: ${{ matrix.target }}
+      ARCH: ${{ matrix.arch }}
+      # Smaller binaries; panics still name their file and line.
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but Cargo.toml says $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Toolchain
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+
+      - name: Test
+        run: cargo test --locked --release
+
+      - name: Build
+        run: cargo build --locked --release --target "$TARGET"
+
+      - name: Smoke test
+        run: |
+          bin="target/$TARGET/release/quai-dash"
+          file "$bin"
+          file "$bin" | grep -q 'static'
+          "$bin" --version | grep -qx "quai-dash $VERSION"
+          "$bin" config
+
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-about
+
+      - name: Package
+        run: |
+          name="quai-dash-$VERSION-$ARCH-linux"
+          mkdir -p "dist/$name/scripts" "dist/$name/licenses/fonts"
+          cp "target/$TARGET/release/quai-dash" README.md LICENSE "dist/$name/"
+          cp -r contrib "dist/$name/"
+          cp scripts/install-service.sh "dist/$name/scripts/"
+          cp web/fonts/OFL-*.txt "dist/$name/licenses/fonts/"
+          cargo about generate --locked --target "$TARGET" about.hbs > "dist/$name/licenses/THIRD-PARTY.html"
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
+            -C dist -czf "dist/$name.tar.gz" "$name"
+          echo "ARCHIVE=dist/$name.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Attest
+        if: github.ref_type == 'tag'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.ARCHIVE }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quai-dash-${{ matrix.arch }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+
+  publish:
+    name: Draft release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: quai-dash-*
+          merge-multiple: true
+          path: dist
+      - name: Checksums
+        run: cd dist && sha256sum -- *.tar.gz | tee SHA256SUMS
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "quai-dash $GITHUB_REF_NAME" \
+            --verify-tag --draft --generate-notes
