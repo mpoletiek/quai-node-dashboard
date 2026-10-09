@@ -5,6 +5,21 @@ All notable changes to quai-dash. The format follows
 follow [Semantic Versioning](https://semver.org/). Each release's section
 here becomes its release notes.
 
+## [Unreleased]
+
+### Added
+
+- **One-line install:** `curl -fsSL …/install.sh | sh` installs the latest
+  release's binary for this machine, only if it matches the release's
+  SHA256SUMS; `--service systemd|openrc|user|auto --run-as USER` also
+  installs the service. Releases now carry `install.sh` too.
+
+### Changed
+
+- The mining counters say which are since the stratum started (sent to
+  node, mined) and which cover only the last N blocks (paid, with the
+  time they span), in the web dashboard and the TUI.
+
 ## [0.1.0] - 2026-10-08
 
 The first release: a live monitor for a Quai node, rs-quai or go-quai,
@@ -61,4 +76,5 @@ other local users, the network and web pages as untrusted (see
   a frozen dashboard, and both dashboards say STALE or NO SERVER instead
   of showing old data as live.
 
+[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/mpoletiek/quai-node-dashboard/releases/tag/v0.1.0

@@ -62,8 +62,9 @@ safer are welcome as issues.
 
 ## Verifying a release
 
-Each release archive is listed in `SHA256SUMS` and attested as built by
-this repository's release workflow:
+`install.sh` refuses any archive that doesn't match the release's
+`SHA256SUMS`. Each release archive is also attested as built by this
+repository's release workflow; to check both by hand:
 
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS
