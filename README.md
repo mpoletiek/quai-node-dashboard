@@ -116,7 +116,13 @@ all three algorithms.
 - **Overview:** workers connected and the miners behind them; per
   algorithm, this node's hashrate, its share of the network's
   (`quai_getMiningInfo`) and the workshares an hour that share should
-  find; shares accepted, stale and rejected; share luck.
+  find; shares accepted, stale and rejected; share luck. Then two
+  scopes, labeled as such: **since the stratum started**, the shares
+  sent to the node and (rs-quai) what the node made of them: blocks by
+  tier, workshares it kept and how many of those were paid; and **the
+  last N canonical blocks** (shown with the time they span), the
+  workshares and blocks paid to this stratum's miners. A workshare paid
+  an hour ago counts in the first and not the second.
 - **Workers:** a table of every connected worker: address, name,
   algorithm, hashrate, stratum difficulty, shares and the age of its last
   share. The stratum reports a worker's hashrate as a slow average of its
@@ -125,8 +131,8 @@ all three algorithms.
   to the node, settled against the chain: `BLOCK` (it is the canonical
   block at its height), `INCLUDED` (a canonical block carries it as a
   workshare), `PENDING`, or `OLDER` (from before the blocks on screen).
-- **Paid on-chain:** per miner address, the workshares and blocks the
-  recent canonical blocks pay it. The lattice rings those blocks, and
+- **Paid in recent blocks:** per miner address, the workshares and
+  blocks the last N canonical blocks pay it. The lattice rings those blocks, and
   stars a block found through this node.
 - **Events:** each workshare the stratum hands to the node, and each block
   mined through it. A mined block gets its own full-screen moment in both
