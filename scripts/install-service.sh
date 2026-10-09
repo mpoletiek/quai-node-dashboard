@@ -20,8 +20,9 @@ Installs the quai-dash binary and a service that runs `quai-dash web`.
 
 Options:
   --init systemd|openrc  init system (default: detected)
-  --run-as USER          user the service runs as (default: you; root only
-                         when named). It must
+  --run-as USER          user the service runs as (default: the user a
+                         running rs-quai or go-quai runs as, else you; root
+                         only when named). It must
                          be the node's user to read the node's logs and its
                          /proc entries for the peer map. `--run-as quai-dash`
                          creates that system user if it is missing.
@@ -100,15 +101,43 @@ systemd | openrc) ;;
 *) die "--init must be systemd or openrc, not '$INIT'" ;;
 esac
 
+# Who runs the node here: the owners of processes named as quai-dash's
+# detection names them (rs-quai, rsq-node, go-quai), one per line. /proc
+# shows every process's owner to every user, so this needs no root.
+node_users() {
+	local d comm u
+	for d in /proc/[0-9]*; do
+		comm=$(cat "$d/comm" 2>/dev/null) || continue
+		case "${comm,,}" in
+		rs-quai* | rsq-node* | go-quai*)
+			u=$(stat -c %U "$d" 2>/dev/null) || continue
+			id -u "$u" >/dev/null 2>&1 && echo "$u"
+			;;
+		esac
+	done | sort -u
+}
+NODE_USERS=""
+[ "$UNINSTALL" = 1 ] || NODE_USERS="$(node_users)"
+RUN_AS_WHY="given"
+
 if [ "$USER_MODE" = 1 ]; then
 	[ "$INIT" = systemd ] || die "--user is systemd only: OpenRC user services are not supported by this installer. Install the system service with --run-as $ME instead, or start \`quai-dash web\` from your own session (tmux, or a crontab @reboot line)."
 	[ -z "$RUN_AS" ] || [ "$RUN_AS" = "$ME" ] || die "--user runs as you; --run-as $RUN_AS does not apply"
 	[ "$(id -u)" != 0 ] || die "--user installs for the invoking user; don't run it as root"
 	RUN_AS="$ME"
+	RUN_AS_WHY="you: a user unit"
 	: "${PREFIX:=$HOME/.local}"
 else
-	if [ -z "$RUN_AS" ]; then
+	if [ -z "$RUN_AS" ] && [ -n "$NODE_USERS" ]; then
+		# The node's user: it can read the node's logs and /proc.
+		[ "$(wc -l <<<"$NODE_USERS")" = 1 ] || die "nodes run as $(paste -sd, <<<"$NODE_USERS") here: pass --run-as USER for the one quai-dash should watch"
+		RUN_AS="$NODE_USERS"
+		RUN_AS_WHY="the node's user"
+		[ "$RUN_AS" != root ] || die "the node runs as root: pass --run-as root to run quai-dash as root too, or --run-as USER"
+	elif [ -z "$RUN_AS" ]; then
 		RUN_AS="${SUDO_USER:-$ME}"
+		RUN_AS_WHY="you: no running rs-quai or go-quai found"
+		[ "$UNINSTALL" = 1 ] && RUN_AS_WHY="you"
 		[ "$RUN_AS" != root ] || die "the service would run as root: pass --run-as USER (the node's user), or --run-as root if you mean it"
 	fi
 	: "${PREFIX:=/usr/local}"
@@ -246,7 +275,12 @@ ESC_BIN="$(printf '%s' "$BIN" | sed 's/[&|\\]/\\&/g')"
 plan() {
 	echo "quai-dash service: $([ "$UNINSTALL" = 1 ] && echo uninstall || echo install)"
 	echo "  init system  $INIT$([ "$USER_MODE" = 1 ] && echo ' (user unit)')"
-	echo "  service      $SERVICE, runs as $RUN_AS$([ "$CREATE_USER" = 1 ] && echo ' (created)')"
+	echo "  service      $SERVICE, runs as $RUN_AS ($RUN_AS_WHY$([ "$CREATE_USER" = 1 ] && echo ', created'))"
+	# Not the node's user: say what that costs.
+	if [ -n "$NODE_USERS" ] && ! grep -qx -- "$RUN_AS" <<<"$NODE_USERS"; then
+		echo "  note         the node runs as $(paste -sd, <<<"$NODE_USERS"); running as $RUN_AS, the dashboard"
+		echo "               sees only what the node's RPC offers (no node log, no peer map)"
+	fi
 	echo "  binary       $BIN$([ "$UNINSTALL" = 0 ] && echo " (from $BINARY)")"
 	echo "  unit/init    $UNIT"
 	echo "  environment  $ENV_FILE$([ "$UNINSTALL" = 1 ] && echo ' (kept)')"
