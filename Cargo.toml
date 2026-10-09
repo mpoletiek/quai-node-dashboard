@@ -1,7 +1,7 @@
 [package]
 name = "quai-node-dashboard"
 description = "quai-dash: a live web and terminal monitor for Quai nodes (rs-quai or go-quai) over their JSON-RPC, logs and connections."
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
