@@ -468,10 +468,12 @@ a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; 
           <div id="m-algos"></div>
           <div class="kv" style="margin-top:10px">
             <span class="lbl">Shares ok · stale · bad</span><span class="v num" id="m-shares">—</span>
-            <span class="lbl">Workshares to node</span><span class="v num" id="m-found">—</span>
-            <span class="lbl">Paid on-chain</span><span class="v num" id="m-chain">—</span>
             <span class="lbl">Share luck</span><span class="v num" id="m-luck">—</span>
-            <span class="lbl" id="m-mined-l" hidden title="What the node made of the shares this stratum handed it, since the stratum started">Mined since start</span><span class="v num" id="m-mined" hidden>—</span>
+            <!-- Two scopes: since the stratum started (its own counts), and the
+                 recent canonical blocks quai-dash has scanned. -->
+            <span class="lbl" title="Shares that met the workshare target and went to the node, since the stratum started">Sent to node</span><span class="v num" id="m-found">—</span>
+            <span class="lbl" id="m-mined-l" hidden title="What the node made of the shares sent to it, since the stratum started: blocks, and workshares it kept (and how many of those a canonical block included)">Mined since start</span><span class="v num" id="m-mined" hidden>—</span>
+            <span class="lbl" id="m-chain-l" title="Workshares and blocks in the most recent canonical blocks that pay this stratum's miners (any source)">Paid · recent blocks</span><span class="v num" id="m-chain">—</span>
           </div>
         </div>
         <div class="wk">
@@ -481,7 +483,7 @@ a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; 
         <div class="fd">
           <h3>Handed to the node</h3>
           <div class="flist" id="m-flist"></div>
-          <h3 style="margin-top:14px">Miners · paid on-chain</h3>
+          <h3 style="margin-top:14px" id="m-mhead">Miners · paid in recent blocks</h3>
           <div class="mlist" id="m-mlist"></div>
           <div class="mfoot" id="m-foot"></div>
         </div>
@@ -867,8 +869,10 @@ Demo.prototype.stratum = function (now, mining) {
     found: this.found.map((f) => ({ ...f })),
     onchain: { window: this.blocks.length, workshares: ws, blocks: blk, found_included: this.found.filter((f) => f.status === "included").length,
       found_blocks: this.found.filter((f) => f.status === "block").length, by_address: [...by.values()] },
-    // The node's own tally (rs-quai): a region block from before the page opened, plus the demo's finds.
-    mined: { prime: 0, region: 1, zone: 2 + this.found.filter((f) => f.status === "block").length, workshares: 214 + this.found.length,
+    // The node's own tally (rs-quai): a region block from before the page opened, plus the demo's
+    // finds. Every share sent either became a block or was kept as a workshare.
+    mined: { prime: 0, region: 1, zone: 2 + this.found.filter((f) => f.status === "block").length,
+      workshares: 211 + this.found.length - this.found.filter((f) => f.status === "block").length,
       workshares_paid: 176 + this.found.filter((f) => f.status === "included").length } };
 };
 
@@ -1083,9 +1087,15 @@ function renderStratum(s) {
       `<span class="bar"><i style="width:${pct}%"></i></span></div>`;
   }).join("");
   $("m-shares").innerHTML = `<span style="color:var(--ok)">${fmtInt(st.shares_valid)}</span> · ${fmtInt(st.shares_stale)} · <span style="color:${st.shares_invalid ? "var(--bad)" : "inherit"}">${fmtInt(st.shares_invalid)}</span>`;
-  $("m-found").textContent = fmtInt(st.workshares_found);
+  $("m-found").innerHTML = `${fmtInt(st.workshares_found)} <small>since start</small>`;
   const oc = st.onchain;
-  $("m-chain").innerHTML = `${oc.workshares} ws · <span style="color:${oc.blocks ? "var(--warn)" : "inherit"}">${oc.blocks} blk</span><small>/${oc.window}</small>`;
+  // The recent window: as many blocks as quai-dash keeps, and how long they span.
+  const span = s.blocks.length ? Math.max(0, s.now_ms / 1000 - s.blocks[0].timestamp) : 0;
+  const spanText = span >= 5400 ? Math.round(span / 3600) + " h" : Math.max(1, Math.round(span / 60)) + " min";
+  $("m-chain-l").textContent = `Paid · last ${oc.window} blocks`;
+  $("m-mhead").textContent = `Miners · paid in last ${oc.window} blocks` + (oc.window ? ` (${spanText})` : "");
+  $("m-chain").innerHTML = `${oc.workshares} ws · <span style="color:${oc.blocks ? "var(--warn)" : "inherit"}">${oc.blocks} blk</span>` +
+    (oc.window ? ` <small>in ${spanText}</small>` : "");
   $("m-luck").textContent = st.luck.shares ? `best ${st.luck.best.toFixed(1)}% · avg ${st.luck.average.toFixed(2)}%` : "no shares yet";
   // rs-quai reports what the node made of the shares (go-quai does not).
   const mn = st.mined;
@@ -1093,7 +1103,7 @@ function renderStratum(s) {
   if (mn) {
     const tier = (cls, k, v) => `<span class="${cls}" style="${v ? "" : "opacity:.45"}">${k} ${fmtInt(v)}</span>`;
     $("m-mined").innerHTML = `${tier("t-prime", "P", mn.prime)} · ${tier("t-region", "R", mn.region)} · ${tier("t-zone", "Z", mn.zone)} blk<br>` +
-      `<span style="color:var(--ok)">${fmtInt(mn.workshares_paid)}</span><small>/${fmtInt(mn.workshares)}</small> ws paid`;
+      `${fmtInt(mn.workshares)} ws kept · <span style="color:var(--ok)">${fmtInt(mn.workshares_paid)}</span> paid`;
   }
   const now = s.now_ms;
   $("m-wbody").innerHTML = st.workers.length ? st.workers.map((w) =>

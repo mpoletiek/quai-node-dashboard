@@ -1834,26 +1834,21 @@ fn stratum_overview<'a>(p: &Pal, st: &crate::state::Stratum) -> Vec<Line<'a>> {
         ),
         Span::styled(" bad", Style::new().fg(p.dim)),
     ]));
+    // Two scopes, each on its own lines: since the stratum started (SENT,
+    // MINED), and the recent canonical blocks quai-dash has scanned (PAID).
     let oc = &st.onchain;
     lines.push(Line::from(vec![
-        Span::styled("FOUND   ", Style::new().fg(p.dim)),
+        Span::styled("SENT    ", Style::new().fg(p.dim)),
         Span::styled(
             thousands(st.workshares_found),
             Style::new().fg(p.text).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" to node · chain ", Style::new().fg(p.dim)),
-        Span::styled(oc.workshares.to_string(), Style::new().fg(p.ok)),
-        Span::styled(" ws ", Style::new().fg(p.dim)),
-        Span::styled(
-            oc.blocks.to_string(),
-            Style::new().fg(if oc.blocks > 0 { p.warn } else { p.faint }),
-        ),
-        Span::styled(format!(" blk / {}", oc.window), Style::new().fg(p.dim)),
+        Span::styled(" to node since start", Style::new().fg(p.dim)),
     ]));
     if let Some(m) = st.mined {
         let n = |v: u64, c: Color| {
             Span::styled(
-                v.to_string(),
+                thousands(v),
                 Style::new()
                     .fg(if v > 0 { c } else { p.faint })
                     .add_modifier(Modifier::BOLD),
@@ -1867,11 +1862,26 @@ fn stratum_overview<'a>(p: &Pal, st: &crate::state::Stratum) -> Vec<Line<'a>> {
             n(m.region, p.purple),
             Span::styled(" · Z ", Style::new().fg(p.fg)),
             n(m.zone, p.fg),
-            Span::styled(" blocks · paid ", Style::new().fg(p.dim)),
+            Span::styled(" blk · ", Style::new().fg(p.dim)),
+            Span::styled(thousands(m.workshares), Style::new().fg(p.text)),
+            Span::styled(" ws kept, ", Style::new().fg(p.dim)),
             n(m.workshares_paid, p.ok),
-            Span::styled(format!("/{} ws", m.workshares), Style::new().fg(p.dim)),
+            Span::styled(" paid", Style::new().fg(p.dim)),
         ]));
     }
+    lines.push(Line::from(vec![
+        Span::styled("PAID    ", Style::new().fg(p.dim)),
+        Span::styled(oc.workshares.to_string(), Style::new().fg(p.ok)),
+        Span::styled(" ws · ", Style::new().fg(p.dim)),
+        Span::styled(
+            oc.blocks.to_string(),
+            Style::new().fg(if oc.blocks > 0 { p.warn } else { p.faint }),
+        ),
+        Span::styled(
+            format!(" blk in last {} blocks", oc.window),
+            Style::new().fg(p.dim),
+        ),
+    ]));
     lines.push(if st.luck.shares == 0 {
         Line::from(vec![
             Span::styled("LUCK    ", Style::new().fg(p.dim)),
@@ -2009,11 +2019,15 @@ fn draw_mining(f: &mut Frame, app: &App, s: &State, area: Rect) {
     };
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(42), Constraint::Percentage(58)]).areas(area);
-    let over_h = 9.min(left.height);
+    // As tall as the overview's lines (plus the frame), so none is cut.
+    let overview = stratum_overview(&p, st);
+    let over_h = u16::try_from(overview.len() + 2)
+        .unwrap_or(u16::MAX)
+        .min(left.height);
     let [over, miners] =
         Layout::vertical([Constraint::Length(over_h), Constraint::Min(0)]).areas(left);
     let inner = panel(f, over, app, "STRATUM", "採掘");
-    f.render_widget(Paragraph::new(stratum_overview(&p, st)), inner);
+    f.render_widget(Paragraph::new(overview), inner);
     // Miners: workers and what the chain paid them in the window.
     let inner = panel(f, miners, app, "MINERS", "鉱夫");
     let mut lines = vec![Line::styled(
@@ -2829,6 +2843,26 @@ mod tests {
                 app.theme = theme;
                 app.view = view;
                 assert!(term.draw(|f| draw(f, &app, &s)).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn mining_counters_name_their_scope() {
+        let mut s = with_stratum(sample());
+        if let Some(st) = s.stratum.as_mut() {
+            st.mined = Some(crate::state::StratumMined {
+                prime: 2,
+                region: 2,
+                zone: 0,
+                workshares: 2_222,
+                workshares_paid: 2_181,
+            });
+        }
+        for view in [View::Dash, View::Mining] {
+            let out = render_state(&s, Theme::Ghost, 160, 48, view);
+            for want in ["to node since start", "ws kept,", "blk in last"] {
+                assert!(out.contains(want), "{want:?} missing or cut:\n{out}");
             }
         }
     }

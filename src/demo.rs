@@ -466,11 +466,14 @@ impl Demo {
         // The node's own tally (rs-quai): a region block from before the
         // page opened, plus whatever the demo finds.
         let status = |k: &str| s.found.iter().filter(|f| f.status == k).count() as u64;
+        // Every share sent either became a block or was kept as a
+        // workshare, as on a real node.
+        let (prime, region, zone) = (0, 1, 2 + status("block"));
         s.mined = Some(crate::state::StratumMined {
-            prime: 0,
-            region: 1,
-            zone: 2 + status("block"),
-            workshares: s.workshares_found,
+            prime,
+            region,
+            zone,
+            workshares: s.workshares_found.saturating_sub(prime + region + zone),
             workshares_paid: 176 + status("included"),
         });
         for f in &mut self.found {
