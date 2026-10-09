@@ -7,6 +7,19 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Uninstall:** `curl -fsSL …/uninstall.sh | sh` stops and removes every
+  quai-dash service (systemd system and user, OpenRC) and binary the
+  installers set up, downloading nothing; `--purge` also removes the
+  configuration, logs and the quai-dash system user. Releases carry it
+  next to `install.sh`.
+
+### Changed
+
+- `install.sh --uninstall` points to `uninstall.sh`, which also removes
+  services without knowing how they were installed.
+
 ## [0.1.1] - 2026-10-09
 
 ### Added

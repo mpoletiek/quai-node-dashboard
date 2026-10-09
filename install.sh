@@ -33,7 +33,6 @@ Options:
                   the node's logs and /proc (default: you)
   --prefix DIR    install the binary to DIR/bin (default: /usr/local with a
                   system service or as root, else ~/.local)
-  --uninstall     remove the binary (and, with --service, the service)
   --dry-run       print every action without doing it
   -h, --help      this help
 USAGE
@@ -123,7 +122,6 @@ main() {
 	SERVICE=none
 	RUN_AS=""
 	PREFIX=""
-	UNINSTALL=0
 	DRY_RUN=0
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -135,7 +133,7 @@ main() {
 		--run-as=*) RUN_AS="${1#*=}"; shift ;;
 		--prefix) [ $# -ge 2 ] || die "--prefix needs a value"; PREFIX="$2"; shift 2 ;;
 		--prefix=*) PREFIX="${1#*=}"; shift ;;
-		--uninstall) UNINSTALL=1; shift ;;
+		--uninstall) die "to uninstall: curl -fsSL https://raw.githubusercontent.com/$REPO/main/uninstall.sh | sh" ;;
 		--dry-run) DRY_RUN=1; shift ;;
 		-h | --help) usage; exit 0 ;;
 		*) die "unknown option $1 (see --help)" ;;
@@ -193,7 +191,6 @@ main() {
 		esac
 		[ -z "$RUN_AS" ] || set -- "$@" --run-as "$RUN_AS"
 		[ -z "$PREFIX" ] || set -- "$@" --prefix "$PREFIX"
-		[ "$UNINSTALL" = 0 ] || set -- "$@" --uninstall
 		[ "$DRY_RUN" = 0 ] || set -- "$@" --dry-run
 		bash "$DIR/scripts/install-service.sh" "$@"
 		return
@@ -209,14 +206,6 @@ main() {
 		command -v sudo >/dev/null 2>&1 || die "can't write $PREFIX/bin and there is no sudo: run as root, or pick --prefix"
 		SUDO=sudo
 	fi
-	if [ "$UNINSTALL" = 1 ]; then
-		if [ -e "$BIN" ] || [ "$DRY_RUN" = 1 ]; then
-			run $SUDO rm -f "$BIN"
-		else
-			say "nothing at $BIN"
-		fi
-		return
-	fi
 	run $SUDO install -D -m 0755 "$DIR/quai-dash" "$BIN"
 	[ "$DRY_RUN" = 1 ] || "$BIN" --version
 	case ":$PATH:" in
@@ -230,6 +219,7 @@ Installed $BIN. On the node's host, as the node's user:
   quai-dash tui      # the terminal version
   quai-dash config   # what it found, and why
 To run it as a service, run this installer again with --service systemd|openrc|user --run-as USER.
+To uninstall: curl -fsSL https://raw.githubusercontent.com/$REPO/main/uninstall.sh | sh
 EOF
 }
 
