@@ -29,8 +29,9 @@ Options:
                     user      systemd user unit, no root
                     auto      systemd or OpenRC, whichever this host runs
                   (default: none, only the binary)
-  --run-as USER   user the service runs as: the node's user, so it can read
-                  the node's logs and /proc (default: you)
+  --run-as USER   user the service runs as (default: the user a running
+                  rs-quai or go-quai runs as, else you). It should be the
+                  node's user, to read the node's logs and /proc.
   --prefix DIR    install the binary to DIR/bin (default: /usr/local with a
                   system service or as root, else ~/.local)
   --dry-run       print every action without doing it

@@ -17,6 +17,12 @@ here becomes its release notes.
 
 ### Changed
 
+- The service installer runs the service as the node's user by default,
+  found from the running rs-quai or go-quai process, instead of as
+  whoever runs the installer; with nodes under several users it asks
+  for `--run-as`, and it warns when `--run-as` names someone else (that
+  user sees only the node's RPC: no node log, no peer map). The README's
+  one-liners no longer need `--run-as`.
 - `install.sh --uninstall` points to `uninstall.sh`, which also removes
   services without knowing how they were installed.
 

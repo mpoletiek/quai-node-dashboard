@@ -48,18 +48,26 @@ curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/
 ```
 
 That installs the latest release's static binary to `~/.local/bin` (or
-`/usr/local/bin` as root). To also run it as a service at boot, as the
-node's user (here `node`):
+`/usr/local/bin` as root). To also run it as a service at boot:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh | sh -s -- --service systemd --run-as node
-curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh | sh -s -- --service openrc --run-as node
+curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh | sh -s -- --service systemd
+curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh | sh -s -- --service openrc
 ```
+
+The service runs as **the node's user**, found from the running rs-quai
+or go-quai process (the plan it prints says so), because only that user
+can read the node's logs and its connections in `/proc`, which the log
+pane and the peer map need. With no node running it uses you, and with
+nodes under several users it asks: name one with `--run-as USER` (`ps -o
+user= -C rs-quai,go-quai` lists them). `--run-as quai-dash` creates a
+separate `quai-dash` user instead; that works, but shows only what the
+node's RPC offers: no node log, no peer map.
 
 | Option | |
 |---|---|
 | `--service systemd\|openrc\|user\|auto` | also install a service that runs `quai-dash web` (`user`: a systemd user unit, no root; `auto`: whichever init this host runs). Default: the binary only |
-| `--run-as USER` | user the service runs as: the node's, so it can read the node's logs and `/proc` (default: you) |
+| `--run-as USER` | user the service runs as (default: the node's, from the running node process, else you) |
 | `--version X` | a release other than the latest, e.g. `0.1.0` |
 | `--prefix DIR` | binary in `DIR/bin` |
 | `--dry-run` | print every action without doing it |
@@ -343,7 +351,8 @@ flags: detection and the config file supply the rest.
 ```sh
 cargo build --release                         # from a checkout; a release archive has the binary
 scripts/install-service.sh --dry-run          # shows every action, changes nothing
-scripts/install-service.sh --run-as node      # install, enable and start as user "node"
+scripts/install-service.sh                    # install, enable and start as the node's user
+scripts/install-service.sh --run-as node      # ... as user "node"
 scripts/install-service.sh --user             # systemd user unit, no root
 scripts/install-service.sh --uninstall
 ```
@@ -351,7 +360,7 @@ scripts/install-service.sh --uninstall
 | Option | |
 |---|---|
 | `--init systemd\|openrc` | init system (default: detected from `/run/systemd/system` or `/run/openrc`) |
-| `--run-as USER` | user the service runs as (default: whoever runs the installer, never root unless named; `quai-dash` is created if missing) |
+| `--run-as USER` | user the service runs as (default: the user a running rs-quai or go-quai runs as, else whoever runs the installer; never root unless named; `quai-dash` is created if missing) |
 | `--user` | a systemd `--user` unit in `~/.config/systemd/user`, binary in `~/.local/bin` (OpenRC: not supported; use the system service with `--run-as` yourself) |
 | `--prefix DIR` | binary in `DIR/bin` (default `/usr/local`, `~/.local` with `--user`) |
 | `--binary FILE` | binary to install (default: the release archive's, else `target/release/quai-dash`, else the one on PATH) |
@@ -365,6 +374,8 @@ It prints its plan first and uses sudo only when not already root.
 entries (the peer map) needs the node's own user; under the systemd
 unit's hardening even root can't read another user's `/proc/<pid>/fd`.
 A dedicated `quai-dash` user works, but then shows only what RPC offers.
+The installer picks the node's user by default, from the running node
+process, and warns when `--run-as` names someone else.
 
 What gets installed:
 
