@@ -359,11 +359,11 @@ mod tests {
 mod preview {
     use super::*;
 
-    /// `RSQ_DASH_PREVIEW=dir cargo test -p rsq-dash preview -- --ignored`
+    /// `QUAI_DASH_PREVIEW=dir cargo test preview -- --ignored`
     #[test]
     #[ignore]
     fn write_previews() {
-        let Ok(dir) = std::env::var("RSQ_DASH_PREVIEW") else {
+        let Ok(dir) = std::env::var("QUAI_DASH_PREVIEW") else {
             return;
         };
         let cities = [

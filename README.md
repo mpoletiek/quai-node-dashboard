@@ -386,5 +386,3 @@ Petch, Share Tech Mono, Shippori Mincho B1, Noto Sans JP, JetBrains
 Mono) are Google Fonts' web subsets, unmodified, under the SIL Open Font
 License 1.1: see the `OFL-*.txt` files there. The dashboard serves them
 itself and loads nothing from other sites.
-
-Moved out of rs-quai (`crates/rsq-dash`) with its history on 2026-10-08.
