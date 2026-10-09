@@ -62,7 +62,6 @@ curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/
 | `--run-as USER` | user the service runs as: the node's, so it can read the node's logs and `/proc` (default: you) |
 | `--version X` | a release other than the latest, e.g. `0.1.0` |
 | `--prefix DIR` | binary in `DIR/bin` |
-| `--uninstall` | remove the binary (with `--service`, the service too) |
 | `--dry-run` | print every action without doing it |
 
 The installer downloads the release archive for this machine and
@@ -72,9 +71,23 @@ service is set up by the archive's own
 plan and uses sudo only when needed. To read the installer before
 running it: `curl -fsSLO https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/install.sh`, then `sh install.sh --help`.
 
+**Uninstall:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/mpoletiek/quai-node-dashboard/main/uninstall.sh | sh -s -- --purge     # also config, logs and the quai-dash user
+```
+
+It stops and removes every quai-dash service it finds (systemd system
+and user units, OpenRC) and the binary in `/usr/local/bin` or
+`~/.local/bin` (`--prefix DIR` for another), printing each command and
+using sudo only where needed. Configuration (`/etc/quai-dash`, the
+settings files, `~/.config/quai-dash`) and logs stay unless `--purge`.
+`--dry-run` shows what it would do.
+
 **By hand.** Each [release](https://github.com/mpoletiek/quai-node-dashboard/releases)
 has the archives (binary, service installer, `contrib/`, licenses),
-`SHA256SUMS`, and `install.sh` itself:
+`SHA256SUMS`, and `install.sh` and `uninstall.sh` themselves:
 
 ```sh
 v=0.1.1 arch=$(uname -m)                   # x86_64 or aarch64
