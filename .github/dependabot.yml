@@ -1,0 +1,12 @@
+# Weekly update PRs for Cargo dependencies and for the pinned workflow
+# actions (their commit hashes and version comments).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
