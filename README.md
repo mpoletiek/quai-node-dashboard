@@ -403,6 +403,12 @@ state stops moving it says STALE (the TUI does the same).
 The world map is Natural Earth 110m land (public domain, via world-atlas
 2.0.2), rasterized to a 240×120 bit mask in `assets/land-240x120.bin`.
 
+## Security
+
+Report vulnerabilities privately: see [SECURITY.md](SECURITY.md), which
+also says what quai-dash defends against. Changes are in
+[CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT (see `LICENSE`). The fonts in `web/fonts` (Barlow Condensed, Chakra
