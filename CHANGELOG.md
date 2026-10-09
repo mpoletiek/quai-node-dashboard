@@ -5,7 +5,7 @@ All notable changes to quai-dash. The format follows
 follow [Semantic Versioning](https://semver.org/). Each release's section
 here becomes its release notes.
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-08
 
 The first release: a live monitor for a Quai node, rs-quai or go-quai,
 in the browser (`quai-dash web`) or the terminal (`quai-dash tui`), in
