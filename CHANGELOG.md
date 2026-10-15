@@ -7,6 +7,20 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Web dashboard on a syncing node:** the block lattice's time axis drew
+  one label per minute back to its oldest block, so with blocks a year
+  old (a node still syncing) it drew hundreds of thousands of labels a
+  frame and held the browser's main thread at 100%. The axis now picks
+  minutes, hours or days to keep to a handful of ticks.
+- While the node is behind (its newest block over two minutes old), the
+  lattice ends at that block instead of now, so the blocks being synced
+  are laid out rather than piled at the left edge; the timer shows a gap
+  of days as `617d 15h` rather than a nine-digit count of seconds; and
+  prime and region blocks, being history, get no banners or title cards
+  (the events list still shows them).
+
 ## [0.1.2] - 2026-10-09
 
 ### Added

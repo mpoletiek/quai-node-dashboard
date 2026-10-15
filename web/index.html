@@ -692,7 +692,14 @@ function toast(text) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3400);
 }
+// A node more than two minutes behind is syncing (or stalled): the blocks
+// it appends are history, not news, so they get no full-screen moments.
+function nodeBehind() {
+  const z = lastState && lastState.chains && lastState.chains.zone;
+  return !!z && lastState.now_ms / 1000 - z.timestamp > 120;
+}
 function onEvent(ev) {
+  if ((ev.kind === "prime" || ev.kind === "region") && nodeBehind()) return;
   if (ev.kind === "prime") {
     const n = ev.text.match(/Prime block (\d+)/);
     const num = n ? Number(n[1]).toLocaleString("en-US") : "";
@@ -1179,6 +1186,11 @@ function seg7(ctx, x, y, w, h, ch, on, off) {
   for (const k of "abcdefg") { ctx.fillStyle = segs.includes(k) ? on : off; parts[k](); }
   ctx.restore();
 }
+// A long gap as its two largest units: "617d 4h", "5h 12m", "16m 40s".
+function longAgo(t) {
+  const d = Math.floor(t / 86400), h = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60), sec = Math.floor(t % 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${sec}s`;
+}
 function drawTimer(now) {
   const { ctx, w, h } = sizeCanvas($("timer"));
   ctx.clearRect(0, 0, w, h);
@@ -1230,8 +1242,10 @@ function drawTimer(now) {
     ctx.beginPath(); ctx.arc(cx, cy, 20 + age * r * 0.8, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.fillStyle = late ? hot : fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = `500 34px ${css("--display")}`; ctx.fillText(t.toFixed(1), cx, cy - 4);
-  ctx.font = `11px ${css("--mono")}`; ctx.fillStyle = dim; ctx.fillText("SEC SINCE BLOCK", cx, cy + 22);
+  // Seconds normally; a node far behind (syncing) has a gap of days.
+  const big = t >= 1000;
+  ctx.font = `500 34px ${css("--display")}`; ctx.fillText(big ? longAgo(t) : t.toFixed(1), cx, cy - 4);
+  ctx.font = `11px ${css("--mono")}`; ctx.fillStyle = dim; ctx.fillText(big ? "SINCE BLOCK" : "SEC SINCE BLOCK", cx, cy + 22);
   ctx.textAlign = "left";
 }
 function drawSpark() {
@@ -1427,7 +1441,12 @@ function drawTape(now) {
   ctx.clearRect(0, 0, w, h);
   const s = lastState; if (!s || !s.blocks.length) return;
   const angel = look === "angel";
-  const bs = s.blocks, nowS = s.now_ms / 1000 + (performance.now() - pollAt) / 1000;
+  const bs = s.blocks, wallS = s.now_ms / 1000 + (performance.now() - pollAt) / 1000;
+  // A node that is behind (syncing, or stalled) has only old blocks: end the
+  // window at its newest block rather than now, so they are laid out
+  // instead of piled at the left edge.
+  const behind = wallS - bs[bs.length - 1].timestamp > 120;
+  const nowS = behind ? bs[bs.length - 1].timestamp + 5 : wallS;
   const gutter = 74, right = 10;
   const span = Math.max(240, nowS - bs[0].timestamp + 5), x0 = nowS - span;
   const X = (ts) => gutter + ((ts - x0) / span) * (w - gutter - right);
@@ -1446,9 +1465,12 @@ function drawTape(now) {
     ctx.fillStyle = dim; ctx.font = `300 10px ${css("--jp")}`; ctx.fillText(jp[k], 6, y + 8);
   }
   ctx.textBaseline = "alphabetic";
-  // time axis
+  // time axis: a tick a minute normally, coarser when the blocks are old
+  // (a node still syncing, or stalled), so the labels stay a handful.
   ctx.fillStyle = dim; ctx.font = `10px ${css("--mono")}`;
-  for (let m = 0; m <= span; m += 60) { const x = X(nowS - m); if (x > gutter - 2) ctx.fillText(m ? "-" + m / 60 + "m" : "now", Math.min(w - 26, x - 10), h - 4); }
+  const step = [60, 300, 900, 3600, 6 * 3600, 86400, 7 * 86400, 30 * 86400, 365 * 86400].find((st) => span / st <= 8) || span / 8;
+  const ago = (m) => m >= 86400 ? Math.round(m / 86400) + "d" : m >= 3600 ? Math.round(m / 3600) + "h" : m / 60 + "m";
+  for (let m = 0; m <= span; m += step) { const x = X(nowS - m); if (x > gutter - 2) ctx.fillText(m ? "-" + ago(m) : behind ? "newest" : "now", Math.min(w - (behind ? 40 : 26), x - 10), h - 4); }
   // layout
   tapeLayout = bs.map((b) => ({ x: X(b.timestamp), b }));
   const newest = tapeLayout[tapeLayout.length - 1];
