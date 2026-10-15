@@ -148,6 +148,8 @@ impl App {
         }
         for e in s.events.iter().filter(|e| e.t_ms > self.last_event_ms) {
             let kind = match e.kind.as_str() {
+                // A syncing node's prime and region blocks are history.
+                "prime" | "region" if s.sync.syncing => None,
                 "prime" => Some(Moment::Prime),
                 "region" => Some(Moment::Region),
                 "mined" => Some(Moment::Mined),
@@ -808,6 +810,15 @@ fn draw(f: &mut Frame, app: &App, s: &State) {
     let [head, body] =
         Layout::vertical([Constraint::Length(header_h), Constraint::Min(0)]).areas(area);
     draw_header(f, app, s, head);
+    // Far behind: a light syncing view instead of the dashboard, the peer
+    // map and the mining view (the log view stays available).
+    if s.sync.syncing && app.view != View::Logs {
+        draw_sync(f, app, s, body);
+        if app.help {
+            draw_help(f, app, area);
+        }
+        return;
+    }
     match app.view {
         View::Logs => {
             let inner = panel(f, body, app, "NODE LOG", "記録");
@@ -829,6 +840,85 @@ fn draw(f: &mut Frame, app: &App, s: &State) {
     if app.theme == Theme::Ghost {
         scanline(f, app, area);
     }
+}
+
+/// The syncing view: progress, pace and the log, nothing drawn per frame.
+fn draw_sync(f: &mut Frame, app: &App, s: &State, area: Rect) {
+    use crate::sync::{per_second, percent, span, utc_date};
+    let p = pal(app.theme);
+    let y = &s.sync;
+    let [top, logs] = Layout::vertical([Constraint::Length(15), Constraint::Min(4)]).areas(area);
+    let inner = panel(f, top, app, "SYNCING", "同期中");
+    let [intro, bar, facts] = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Length(2),
+        Constraint::Min(0),
+    ])
+    .areas(inner);
+    f.render_widget(
+        Paragraph::new(Line::styled(
+            "The node is catching up with the network. The full dashboard (block lattice, peer map, proof-of-work panels and full-screen moments) returns once it is synced.",
+            Style::new().fg(p.dim),
+        ))
+        .wrap(Wrap { trim: true }),
+        intro,
+    );
+
+    // Progress: a bar of blocks, its length in integer cells.
+    let width = bar.width.saturating_sub(10) as u64;
+    let line = match y.progress_bp {
+        Some(bp) => {
+            let full = (u64::from(bp) * width / 10_000) as usize;
+            Line::from(vec![
+                Span::styled("█".repeat(full), Style::new().fg(p.fg)),
+                Span::styled("░".repeat(width as usize - full), Style::new().fg(p.faint)),
+                Span::styled(format!(" {}", percent(bp)), Style::new().fg(p.text)),
+            ])
+        }
+        None => Line::styled("measuring the chain's start…", Style::new().fg(p.dim)),
+    };
+    f.render_widget(Paragraph::new(line), bar);
+
+    let height = |c: Option<&crate::state::Head>| c.map_or("—".into(), |h| thousands(h.number));
+    let through = s
+        .chains
+        .zone
+        .as_ref()
+        .map_or("—".into(), |z| utc_date(z.timestamp));
+    let speed = y.blocks_per_min.map_or("measuring…".into(), per_second);
+    let eta = match (y.eta_s, y.blocks_per_min) {
+        (Some(e), _) => format!("about {}", span(e)),
+        (None, Some(_)) => "not gaining on the network yet".into(),
+        (None, None) => "estimating…".into(),
+    };
+    let rows = vec![
+        kv(&p, "Zone", height(s.chains.zone.as_ref()), p.fg),
+        kv(&p, "Region", height(s.chains.region.as_ref()), p.text),
+        kv(&p, "Prime", height(s.chains.prime.as_ref()), p.text),
+        kv(&p, "Synced to", through, p.text),
+        kv(
+            &p,
+            "Behind",
+            format!(
+                "{} · about {} blocks",
+                span(y.behind_s),
+                thousands(y.approx_blocks_behind)
+            ),
+            p.warn,
+        ),
+        kv(&p, "Speed", speed, p.text),
+        kv(&p, "ETA", eta, p.text),
+        kv(
+            &p,
+            "Peers",
+            format!("{} in · {} out", s.peers.inbound, s.peers.outbound),
+            p.text,
+        ),
+    ];
+    f.render_widget(Paragraph::new(rows), facts);
+
+    let inner = panel(f, logs, app, "NODE LOG", "記録");
+    draw_logs(f, app, s, inner);
 }
 
 fn draw_dash(f: &mut Frame, app: &App, s: &State, area: Rect) {
@@ -2546,6 +2636,47 @@ mod tests {
             println!("{out}");
         }
         out
+    }
+
+    #[test]
+    fn syncing_view_replaces_the_dashboard() {
+        let mut s = sample();
+        s.chains.zone_start_ts = Some(1_738_707_316);
+        s.sync = crate::sync::Sync {
+            syncing: true,
+            behind_s: 617 * 86_400,
+            approx_blocks_behind: 617 * 86_400 / 5,
+            blocks_per_min: Some(6_000),
+            eta_s: Some(3 * 3600),
+            progress_bp: Some(1_234),
+        };
+        for theme in [Theme::Ghost, Theme::Angel] {
+            for (w, h) in [(160, 48), (80, 24)] {
+                let Ok(mut term) = Terminal::new(TestBackend::new(w, h));
+                let mut app = App::new(theme);
+                app.tick = BOOT_TICKS + 3;
+                app.observe(&s);
+                assert!(term.draw(|f| draw(f, &app, &s)).is_ok());
+                let buf = term.backend().buffer().clone();
+                let text: String = buf.content().iter().map(|c| c.symbol()).collect();
+                for want in [
+                    "SYNCING",
+                    "12.34%",
+                    "100.0 blocks/s",
+                    "about 3h 0m",
+                    "617d 0h",
+                ] {
+                    assert!(text.contains(want), "{theme:?} {w}x{h}: no {want:?}");
+                }
+                for gone in ["BLOCK LATTICE", "PEER MAP"] {
+                    assert!(
+                        !text.contains(gone),
+                        "{theme:?} {w}x{h}: {gone} drawn while syncing"
+                    );
+                }
+                assert!(app.map_rect.get().is_none(), "the pixel map stays off");
+            }
+        }
     }
 
     #[test]

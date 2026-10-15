@@ -7,6 +7,24 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **A syncing view, in the browser and the terminal.** A node far behind
+  the network (its zone head older than 10,000 blocks' worth of the 5 s
+  target, about 14 hours) gets a light page instead of the dashboard:
+  zone, region and prime heights, the date it has synced to, roughly how
+  many blocks behind it is, its pace over the last minute, an ETA, a
+  progress bar through the chain's history, peers in and out, and the
+  node's last log lines. The block lattice, the peer map, the
+  proof-of-work panels and full-screen moments come back once it is
+  within 5,000 blocks' worth (the gap keeps it from flapping). In the
+  browser the page now takes about 5% of a core on a syncing node; the
+  full dashboard took most of one.
+- `/api/state` carries the picture both views draw: `sync` (`syncing`,
+  `behind_s`, `approx_blocks_behind`, `blocks_per_min`, `eta_s`,
+  `progress_bp`), and `chains.zone_start_ts`, the timestamp of the zone
+  chain's block 1, read once from the node.
+
 ## [0.1.3] - 2026-10-15
 
 ### Fixed

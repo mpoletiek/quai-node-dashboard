@@ -41,6 +41,8 @@ pub struct State {
     pub logs: VecDeque<LogLine>,
     /// Sequence number of the newest log line (clients ask for `since`).
     pub log_seq: u64,
+    /// Whether the node is still syncing, and how fast.
+    pub sync: crate::sync::Sync,
 }
 
 /// Identity and reachability of the watched node.
@@ -78,6 +80,9 @@ pub struct Chains {
     pub region: Option<Head>,
     /// Zone chain.
     pub zone: Option<Head>,
+    /// Timestamp of the zone chain's block 1 (unix seconds), once read: the
+    /// start of the chain, for the web dashboard's sync progress.
+    pub zone_start_ts: Option<u64>,
 }
 
 /// One chain's head.

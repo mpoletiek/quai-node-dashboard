@@ -20,6 +20,7 @@ mod raster;
 mod rpc;
 mod state;
 mod stratum;
+mod sync;
 mod term;
 mod tui;
 mod web;

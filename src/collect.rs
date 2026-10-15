@@ -97,6 +97,12 @@ fn ws_field(b: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// A block's timestamp (unix seconds), from its work object header; `None`
+/// when it has none.
+fn block_timestamp(b: &Value) -> Option<u64> {
+    Some(hex_u64(b.get("woHeader")?.get("timestamp")?)).filter(|&t| t > 0)
+}
+
 /// The latest block of a prime (`ctx` 0) or region (1) endpoint, numbered
 /// in its own chain.
 fn head(ep: &Endpoint, ctx: usize) -> Option<Head> {
@@ -241,6 +247,7 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
     let mut first_seen: HashMap<IpAddr, u64> = HashMap::new();
     let mut cmp_hashes: VecDeque<(u64, String)> = VecDeque::new();
     let mut stratum_seen = StratumSeen::default();
+    let mut sync = crate::sync::Tracker::default();
     let rpc_ports: Vec<u16> = [Some(&cfg.zone), cfg.region.as_ref(), cfg.prime.as_ref()]
         .into_iter()
         .flatten()
@@ -373,7 +380,27 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
                 }
             }
         }
+        if let Ok(mut st) = state.lock() {
+            let head = st.chains.zone.as_ref().map(|h| (h.number, h.timestamp));
+            st.sync = sync.update(now, head, st.chains.zone_start_ts);
+        }
         let online = state.lock().map(|s| s.node.online).unwrap_or(false);
+        // The zone chain's start, once: block 1's timestamp. It never
+        // changes, so it is asked for until the node answers, then kept.
+        let start_known = state
+            .lock()
+            .map(|s| s.chains.zone_start_ts.is_some())
+            .unwrap_or(true);
+        if online && !start_known && tick % 10 == 0 {
+            let ts = cfg
+                .zone
+                .call("quai_getBlockByNumber", json!(["0x1", false]))
+                .ok()
+                .and_then(|b| block_timestamp(&b));
+            if let Ok(mut st) = state.lock() {
+                st.chains.zone_start_ts = ts;
+            }
+        }
         if online && tick % 2 == 0 {
             let prime = cfg.prime.as_ref().and_then(|e| head(e, 0));
             let region = cfg.region.as_ref().and_then(|e| head(e, 1));
@@ -578,5 +605,22 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
         if spent < Duration::from_secs(1) {
             std::thread::sleep(Duration::from_secs(1) - spent);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_timestamp_reads_the_work_object_header() {
+        let b = json!({"woHeader": {"timestamp": "0x67a2b0f5"}});
+        assert_eq!(block_timestamp(&b), Some(0x67a2_b0f5));
+        assert_eq!(
+            block_timestamp(&json!({"woHeader": {"timestamp": "0x0"}})),
+            None
+        );
+        assert_eq!(block_timestamp(&json!({"header": {}})), None);
+        assert_eq!(block_timestamp(&Value::Null), None);
     }
 }
