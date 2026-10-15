@@ -286,6 +286,8 @@ impl Demo {
                 hash: b.hash.clone(),
                 timestamp: b.timestamp,
             }),
+            // Mainnet Cyprus-1's block 1 (2025-02-04).
+            zone_start_ts: Some(1_738_707_316),
         };
         st.blocks.push_back(b);
         while st.blocks.len() > BLOCK_HISTORY {

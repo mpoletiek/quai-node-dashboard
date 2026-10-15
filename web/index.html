@@ -132,6 +132,19 @@ a.chip:hover { border-color: var(--acc); }
 /* GHOST: corner brackets */
 .panel::before, .panel::after { content: ""; position: absolute; width: 14px; height: 14px; border-color: var(--acc); border-style: solid; opacity: .8; pointer-events: none; }
 .panel::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+/* Syncing: one light panel instead of the grid (see renderSync). */
+#syncview { display: none; margin: 18px 0; }
+body.syncing #syncview { display: block; }
+body.syncing main.grid { display: none; }
+.sv-intro { color: var(--dim); margin: 6px 0 14px; max-width: 70ch; }
+.sv-bar { height: 10px; background: var(--line); position: relative; overflow: hidden; }
+.sv-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--acc); }
+.sv-pct { font-family: var(--display); font-size: 34px; color: var(--fg); margin: 8px 0 14px; }
+.sv-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 18px; margin-bottom: 18px; }
+.sv-facts .v { font-family: var(--mono); color: var(--fg); font-size: 16px; margin-top: 4px; }
+.sv-log { font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--fg); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.sv-log div { overflow: hidden; text-overflow: ellipsis; }
+.sv-log .WARN { color: var(--warn); } .sv-log .ERROR { color: var(--hot); } .sv-log .DEBUG, .sv-log .TRACE { color: var(--dim); }
 .panel::after { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
 /* ANGEL: heavy frame, clipped corner, stripe tab */
 body[data-look="angel"] .panel { border: 1px solid var(--panel-edge); clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); }
@@ -386,6 +399,24 @@ a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; 
     <span class="lbl keys" title="Keyboard: T switches the look, C turns the full-screen moments on or off">T look · C cinematics</span>
     <span class="clock num" id="clock">--:--:--</span>
   </header>
+
+  <section class="panel syncview" id="syncview" aria-label="Syncing">
+    <div class="ph"><h2>Syncing</h2><span class="jp">同期中</span><span class="aside" id="sv-through"></span></div>
+    <p class="sv-intro">The node is catching up with the network. The full dashboard (block lattice, peer map, proof-of-work panels and full-screen moments) returns once it is synced.</p>
+    <div class="sv-bar"><i id="sv-fill"></i></div>
+    <div class="sv-pct num" id="sv-pct">—</div>
+    <div class="sv-facts">
+      <div><div class="lbl">Zone</div><div class="v num" id="sv-zone">—</div></div>
+      <div><div class="lbl">Region</div><div class="v num" id="sv-region">—</div></div>
+      <div><div class="lbl">Prime</div><div class="v num" id="sv-prime">—</div></div>
+      <div><div class="lbl">Behind</div><div class="v num" id="sv-behind">—</div></div>
+      <div><div class="lbl">Speed</div><div class="v num" id="sv-speed">—</div></div>
+      <div><div class="lbl">ETA</div><div class="v num" id="sv-eta">—</div></div>
+      <div><div class="lbl">Peers in · out</div><div class="v num" id="sv-peers">—</div></div>
+    </div>
+    <div class="ph sv-logh"><h2>Node log</h2><span class="jp">記録</span></div>
+    <div class="sv-log" id="sv-log"></div>
+  </section>
 
   <main class="grid">
     <section class="panel" id="hero" aria-label="Zone head">
@@ -953,6 +984,27 @@ function renderStatus(s) {
   st.classList.toggle("demo", isDemo);
   $("statustext").textContent = isDemo ? "DEMO DATA" : gone ? "NO SERVER" : stale ? "STALE" : s.node.online ? "LIVE" : "OFFLINE";
 }
+// The syncing panel, from the server's sync picture (src/sync.rs decides
+// when the node counts as syncing). Returns whether it is showing.
+function renderSync(s) {
+  const y = s.sync, on = !!(y && y.syncing);
+  document.body.classList.toggle("syncing", on);
+  if (!on) return false;
+  const c = s.chains, n = (h) => (h ? fmtInt(h.number) : "—");
+  $("sv-zone").textContent = n(c.zone);
+  $("sv-region").textContent = n(c.region);
+  $("sv-prime").textContent = n(c.prime);
+  $("sv-through").textContent = c.zone ? "synced to " + new Date(c.zone.timestamp * 1000).toISOString().slice(0, 10) : "";
+  $("sv-behind").textContent = longAgo(y.behind_s) + " · ~" + fmtInt(y.approx_blocks_behind) + " blocks";
+  $("sv-speed").textContent = y.blocks_per_min == null ? "measuring…" : (y.blocks_per_min / 60).toFixed(1) + " blocks/s";
+  $("sv-eta").textContent = y.eta_s != null ? "about " + longAgo(y.eta_s) : y.blocks_per_min != null ? "not gaining yet" : "estimating…";
+  $("sv-peers").textContent = s.peers.inbound + " · " + s.peers.outbound;
+  const bp = y.progress_bp;
+  $("sv-fill").style.width = bp == null ? "0" : bp / 100 + "%";
+  $("sv-pct").textContent = bp == null ? "measuring the chain's start…" : (bp / 100).toFixed(2) + "%";
+  $("sv-log").innerHTML = s.logs.slice(-10).map((l) => `<div class="${esc(l.level || "INFO")}">${esc(l.text)}</div>`).join("");
+  return true;
+}
 function render(s, full) {
   renderStatus(s);
   const isDemo = !!demo || s.node.rpc === "demo";
@@ -964,6 +1016,8 @@ function render(s, full) {
   nk.textContent = (s.node.kind || "").toUpperCase();
   nk.title = s.node.kind_how ? "Node kind: " + s.node.kind_how : "";
   $("nodeloc").textContent = (s.node.location ? s.node.location + " · " : "") + (demo ? "simulated" : s.node.rpc);
+  // Far behind: the syncing panel only, and none of the dashboard's DOM.
+  if (renderSync(s)) return;
   const zone = s.chains.zone;
   const h = $("height"); h.dataset.scr = "1";
   setNum(h, zone ? fmtInt(zone.number) : "— — —");
@@ -1561,9 +1615,11 @@ function frame(now) {
   if (now - lastFrame < FRAME_MS - 2) return;
   lastFrame = now;
   try {
-    drawTimer(now); drawSpark(); drawAlgos(now); drawMap(now); drawTape(now);
-    // Age bars and clock, written only when they change.
-    if (lastState) {
+    // Syncing: the canvases are hidden, so draw none of them.
+    if (!document.body.classList.contains("syncing")) { drawTimer(now); drawSpark(); drawAlgos(now); drawMap(now); drawTape(now); }
+    // Age bars and clock, written only when they change (the bars only
+    // when the dashboard shows: not while syncing).
+    if (lastState && !document.body.classList.contains("syncing")) {
       const avg = { prime: 25, region: 10, zone: 5 };
       const nowS = lastState.now_ms / 1000 + (performance.now() - pollAt) / 1000;
       for (const t of ["prime", "region", "zone"]) {
