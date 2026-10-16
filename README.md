@@ -109,7 +109,7 @@ has the archives (binary, service installer, `contrib/`, licenses),
 `SHA256SUMS`, and `install.sh` and `uninstall.sh` themselves:
 
 ```sh
-v=0.1.4 arch=$(uname -m)                   # x86_64 or aarch64
+v=0.2.0 arch=$(uname -m)                   # x86_64 or aarch64
 base=https://github.com/mpoletiek/quai-node-dashboard/releases/download/v$v
 curl -LO "$base/quai-dash-$v-$arch-linux.tar.gz" -LO "$base/SHA256SUMS"
 sha256sum --check --ignore-missing SHA256SUMS
