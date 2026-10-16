@@ -7,6 +7,8 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-16
+
 ### Added
 
 - **A QUAI look, now the default, in the browser and the terminal.**
@@ -160,7 +162,8 @@ other local users, the network and web pages as untrusted (see
   a frozen dashboard, and both dashboards say STALE or NO SERVER instead
   of showing old data as live.
 
-[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.1...v0.1.2
