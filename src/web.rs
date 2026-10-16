@@ -69,7 +69,35 @@ const FONTS: &[(&str, &[u8])] = &[
         "noto-sans-jp-jp.woff2",
         include_bytes!("../web/fonts/noto-sans-jp-jp.woff2"),
     ),
+    (
+        "bai-jamjuree-400.woff2",
+        include_bytes!("../web/fonts/bai-jamjuree-400.woff2"),
+    ),
+    (
+        "bai-jamjuree-600.woff2",
+        include_bytes!("../web/fonts/bai-jamjuree-600.woff2"),
+    ),
+    (
+        "unbounded.woff2",
+        include_bytes!("../web/fonts/unbounded.woff2"),
+    ),
 ];
+
+/// The looks the page knows; the first is its own default.
+const LOOKS: [&str; 3] = ["quai", "ghost", "angel"];
+/// Where the page reads the server's default look.
+const LOOK_META: &str = r#"<meta name="quai-dash-look" content="quai">"#;
+
+/// The page, opening in `look` when the address names none and the
+/// browser has no saved choice; an unknown look is QUAI.
+fn page(look: &str) -> String {
+    let look = LOOKS.into_iter().find(|l| *l == look).unwrap_or(LOOKS[0]);
+    INDEX_HTML.replacen(
+        LOOK_META,
+        &format!(r#"<meta name="quai-dash-look" content="{look}">"#),
+        1,
+    )
+}
 
 /// What the page may load: only this server (fonts, `/api/state`), and
 /// its own inline script and style. Links out (the explorer) still open.
@@ -94,6 +122,8 @@ struct Shared {
     state: Arc<Mutex<State>>,
     cache: Mutex<Option<(Instant, Arc<String>)>>,
     hostname: String,
+    /// The page, built once with its default look.
+    page: Arc<String>,
 }
 
 impl Shared {
@@ -112,8 +142,9 @@ impl Shared {
     }
 }
 
-/// Serves until the process ends.
-pub fn serve(listen: &str, state: Arc<Mutex<State>>) -> Result<(), String> {
+/// Serves until the process ends. The page opens in `look` (quai, ghost
+/// or angel) unless the visitor picked one.
+pub fn serve(listen: &str, state: Arc<Mutex<State>>, look: &str) -> Result<(), String> {
     let listener = TcpListener::bind(listen).map_err(|e| format!("listen {listen}: {e}"))?;
     let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|h| h.trim().to_ascii_lowercase())
@@ -124,6 +155,7 @@ pub fn serve(listen: &str, state: Arc<Mutex<State>>) -> Result<(), String> {
             state,
             cache: Mutex::new(None),
             hostname,
+            page: Arc::new(page(look)),
         }),
     );
     Ok(())
@@ -266,7 +298,7 @@ fn route(req: Option<&Request>, shared: &Shared) -> (u16, &'static str, Body) {
         "/" | "/index.html" => (
             200,
             "text/html; charset=utf-8",
-            Body::Static(INDEX_HTML.as_bytes()),
+            Body::Shared(shared.page.clone()),
         ),
         "/api/state" => match shared.state_json() {
             Some(json) => (200, "application/json", Body::Shared(json)),
@@ -336,7 +368,7 @@ mod tests {
             .skip(1)
             .filter_map(|r| r.split('"').next())
             .collect();
-        assert_eq!(urls.len(), 10);
+        assert_eq!(urls.len(), 13);
         for u in urls {
             assert!(
                 FONTS.iter().any(|(n, b)| *n == u && b.starts_with(b"wOF2")),
@@ -344,6 +376,20 @@ mod tests {
             );
         }
         assert!(!INDEX_HTML.contains("googleapis") && !INDEX_HTML.contains("gstatic"));
+    }
+
+    #[test]
+    fn page_carries_the_default_look() {
+        assert!(
+            INDEX_HTML.contains(LOOK_META),
+            "the page lost its look meta"
+        );
+        for look in LOOKS {
+            let p = page(look);
+            assert!(p.contains(&format!(r#"<meta name="quai-dash-look" content="{look}">"#)));
+            assert_eq!(p.len(), INDEX_HTML.len() + look.len() - "quai".len());
+        }
+        assert!(page("<script>").contains(LOOK_META));
     }
 
     #[test]
@@ -408,10 +454,12 @@ mod tests {
             state: Arc::new(Mutex::new(State::default())),
             cache: Mutex::new(None),
             hostname: "node1".into(),
+            page: Arc::new(page("ghost")),
         });
         std::thread::spawn(move || serve_on(l, shared));
         let ok = get(port, "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
         assert!(ok.starts_with("HTTP/1.1 200") && ok.contains("<!doctype html>"));
+        assert!(ok.contains(r#"<meta name="quai-dash-look" content="ghost">"#));
         assert!(ok.contains("X-Content-Type-Options: nosniff"));
         let st = get(port, "GET /api/state HTTP/1.1\r\nHost: localhost\r\n\r\n");
         let body = st.split("\r\n\r\n").nth(1).unwrap();

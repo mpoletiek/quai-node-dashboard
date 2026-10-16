@@ -1,6 +1,6 @@
 //! Pixel rendering of the peer map for terminals with an image protocol:
-//! the GHOST rotating dot globe and the ANGEL reticle map, drawn into RGBA
-//! and encoded as PNG.
+//! the QUAI globe in the Quai logo's ring, the GHOST rotating dot globe and
+//! the ANGEL reticle map, drawn into RGBA and encoded as PNG.
 
 use std::io::Write;
 
@@ -84,6 +84,57 @@ impl Canvas {
         }
     }
 
+    /// A ring of radius `r` and `width`, antialiased, leaving out the arc
+    /// within `gap` radians of the angle `notch` (screen angles: y down).
+    pub fn annulus(
+        &mut self,
+        (x, y): (f64, f64),
+        r: f64,
+        width: f64,
+        gap: (f64, f64),
+        c: Rgb,
+        a: f64,
+    ) {
+        let (notch, half) = gap;
+        let reach = r + width / 2.0 + 1.0;
+        let (x0, x1) = ((x - reach).floor() as i64, (x + reach).ceil() as i64);
+        let (y0, y1) = ((y - reach).floor() as i64, (y + reach).ceil() as i64);
+        for py in y0..=y1 {
+            for px in x0..=x1 {
+                let (dx, dy) = (px as f64 + 0.5 - x, py as f64 + 0.5 - y);
+                let d = dx.hypot(dy);
+                let cov = (width / 2.0 + 0.5 - (d - r).abs()).clamp(0.0, 1.0);
+                if cov <= 0.0 {
+                    continue;
+                }
+                let off = (dy.atan2(dx) - notch + std::f64::consts::PI)
+                    .rem_euclid(std::f64::consts::TAU)
+                    - std::f64::consts::PI;
+                // Square ends: coverage by distance from the gap's edge.
+                let edge = ((off.abs() - half) * d + 0.5).clamp(0.0, 1.0);
+                self.blend(px, py, c, a * cov * edge);
+            }
+        }
+    }
+
+    /// A thick line with round ends, antialiased.
+    pub fn bar(&mut self, (x0, y0): (f64, f64), (x1, y1): (f64, f64), width: f64, c: Rgb, a: f64) {
+        let reach = width / 2.0 + 1.0;
+        let (lx, hx) = (x0.min(x1) - reach, x0.max(x1) + reach);
+        let (ly, hy) = (y0.min(y1) - reach, y0.max(y1) + reach);
+        let (vx, vy) = (x1 - x0, y1 - y0);
+        let len2 = (vx * vx + vy * vy).max(1e-9);
+        for py in (ly.floor() as i64)..=(hy.ceil() as i64) {
+            for px in (lx.floor() as i64)..=(hx.ceil() as i64) {
+                let (qx, qy) = (px as f64 + 0.5 - x0, py as f64 + 0.5 - y0);
+                let u = ((qx * vx + qy * vy) / len2).clamp(0.0, 1.0);
+                let d = (qx - u * vx).hypot(qy - u * vy);
+                let cov = (width / 2.0 + 0.5 - d).clamp(0.0, 1.0);
+                self.blend(px, py, c, a * cov);
+            }
+        }
+    }
+
     /// A square outline.
     pub fn square(&mut self, x: f64, y: f64, r: f64, c: Rgb, a: f64) {
         self.line((x - r, y - r), (x + r, y - r), c, a);
@@ -140,6 +191,10 @@ pub struct MapColors {
     pub warn: Rgb,
     /// This node.
     pub hot: Rgb,
+    /// Land (QUAI; the others draw land in `acc`).
+    pub land: Rgb,
+    /// Inbound peers (QUAI; the others use `acc`).
+    pub peer: Rgb,
 }
 
 /// A peer to draw: position and whether it is outbound.
@@ -245,6 +300,108 @@ pub fn globe(
     cv
 }
 
+/// QUAI: the Quai logo, its ring around a dot globe turned to `lon0`
+/// degrees for the inner disc, the tail out through the notch at the lower
+/// right; peers as small rings, arcs from `here` with packets at time `t`.
+pub fn ring(
+    w: usize,
+    h: usize,
+    c: &MapColors,
+    pins: &[Pin],
+    here: Option<&Place>,
+    lon0: f64,
+    t: f64,
+) -> Canvas {
+    let mut cv = Canvas::new(w, h, c.bg);
+    let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
+    // The logo's proportions (46 units across): the ring spans radii 11.4
+    // to 23, the inner disc 6.9, the tail leaves at about 55° below the
+    // horizontal. Here the ring is thinner and the globe fills the hole.
+    let outer = (w.min(h) as f64) * 0.47;
+    let band = outer * 0.13;
+    let r = outer - band - outer * 0.07;
+    let notch = 55f64.to_radians();
+    cv.glow(cx, cy, outer * 1.1, c.acc, 0.10);
+    cv.annulus(
+        (cx, cy),
+        outer - band / 2.0,
+        band,
+        (notch, 0.16),
+        c.acc,
+        1.0,
+    );
+    let (nx, ny) = (notch.cos(), notch.sin());
+    cv.bar(
+        (cx + nx * r * 0.82, cy + ny * r * 0.82),
+        (
+            cx + nx * (outer + band * 0.35),
+            cy + ny * (outer + band * 0.35),
+        ),
+        band * 0.78,
+        c.acc,
+        1.0,
+    );
+    let tilt: f64 = 0.32;
+    let lon0 = lon0.to_radians();
+    let proj = |lat: f64, lon: f64| {
+        let (la, lo) = (lat.to_radians(), lon.to_radians() - lon0);
+        let (x, y0, z0) = (la.cos() * lo.sin(), la.sin(), la.cos() * lo.cos());
+        let y = y0 * tilt.cos() - z0 * tilt.sin();
+        let z = y0 * tilt.sin() + z0 * tilt.cos();
+        (cx + x * r, cy - y * r, z)
+    };
+    let dot = (r / 150.0).max(0.6);
+    for (la, lo) in land_points() {
+        let (x, y, z) = proj(la, lo);
+        if z > 0.0 {
+            cv.dot(x, y, dot, c.land, 0.15 + 0.7 * z);
+        }
+    }
+    let origin = here.map(|p| proj(p.lat, p.lon)).filter(|o| o.2 > 0.0);
+    for (i, p) in pins.iter().enumerate() {
+        let (x, y, z) = proj(p.place.lat, p.place.lon);
+        if z <= 0.0 {
+            continue;
+        }
+        if let Some((ox, oy, _)) = origin {
+            let (mx, my) = (
+                (x + ox) / 2.0,
+                (y + oy) / 2.0 - ((x - ox).hypot(y - oy)) * 0.2,
+            );
+            let at = |u: f64| {
+                let iu = 1.0 - u;
+                (
+                    iu * iu * ox + 2.0 * iu * u * mx + u * u * x,
+                    iu * iu * oy + 2.0 * iu * u * my + u * u * y,
+                )
+            };
+            let mut last = (ox, oy);
+            for k in 1..=24 {
+                let pt = at(k as f64 / 24.0);
+                cv.line(last, pt, c.acc, 0.35 * z);
+                last = pt;
+            }
+            let pk = at((t * 0.25 + i as f64 * 0.137).fract());
+            cv.dot(pk.0, pk.1, dot * 1.4, c.peer, 0.9 * z);
+        }
+        let col = if p.out { c.warn } else { c.peer };
+        cv.annulus((x, y), dot * 3.4, dot * 1.3, (0.0, -1.0), col, z.min(1.0));
+    }
+    if let Some((ox, oy, _)) = origin {
+        let pulse = (t * 0.8).fract();
+        cv.annulus(
+            (ox, oy),
+            dot * (4.0 + 10.0 * pulse),
+            dot,
+            (0.0, -1.0),
+            c.acc,
+            0.8 * (1.0 - pulse),
+        );
+        cv.dot(ox, oy, dot * 3.2, c.acc, 1.0);
+    }
+    cv
+}
+
 /// ANGEL: an equirectangular dot map with a sweep at time `t` and square
 /// reticles on peers (larger where the sweep passes).
 pub fn flat(
@@ -316,6 +473,8 @@ mod tests {
             acc: [94, 246, 224],
             warn: [255, 195, 90],
             hot: [255, 61, 127],
+            land: [94, 246, 224],
+            peer: [94, 246, 224],
         };
         let pins = [Pin {
             place: Place {
@@ -329,6 +488,7 @@ mod tests {
         for cv in [
             globe(320, 200, &c, &pins, None, 0.0, 1.0),
             flat(320, 200, &c, &pins, None, 1.0),
+            ring(320, 200, &c, &pins, None, 0.0, 1.0),
         ] {
             let png = cv.png();
             assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -404,12 +564,24 @@ mod preview {
             acc: [94, 246, 224],
             warn: [255, 195, 90],
             hot: [255, 61, 127],
+            land: [94, 246, 224],
+            peer: [94, 246, 224],
         };
         let angel = MapColors {
             bg: [6, 2, 3],
             acc: [255, 122, 26],
             warn: [255, 178, 26],
             hot: [255, 38, 38],
+            land: [255, 122, 26],
+            peer: [255, 122, 26],
+        };
+        let quai = MapColors {
+            bg: [23, 11, 7],
+            acc: [226, 1, 1],
+            warn: [255, 196, 84],
+            hot: [255, 86, 86],
+            land: [168, 128, 106],
+            peer: [240, 161, 109],
         };
         let _ = std::fs::write(
             format!("{dir}/globe.png"),
@@ -418,6 +590,10 @@ mod preview {
         let _ = std::fs::write(
             format!("{dir}/flat.png"),
             flat(900, 440, &angel, &pins, Some(&here), 4.0).png(),
+        );
+        let _ = std::fs::write(
+            format!("{dir}/ring.png"),
+            ring(720, 440, &quai, &pins, Some(&here), -60.0, 2.0).png(),
         );
     }
 }

@@ -135,7 +135,8 @@ pub struct Partial {
     /// loopback exposes the dashboard (no authentication) to the network.
     #[arg(long, global = true, env = "QUAI_DASH_LISTEN", value_name = "ADDR")]
     pub listen: Option<String>,
-    /// tui: starting look, `t` toggles [default: ghost].
+    /// Starting look in the terminal and the browser (`t` / `T` switches;
+    /// the browser remembers a look picked there) [default: quai].
     #[arg(long, global = true, env = "QUAI_DASH_THEME", value_enum)]
     pub theme: Option<Theme>,
     /// tui: pixel peer map with the kitty graphics protocol (kitty,
@@ -197,7 +198,7 @@ impl Partial {
             stall_secs: Some(60),
             demo: Some(false),
             listen: Some(DEFAULT_LISTEN.into()),
-            theme: Some(Theme::Ghost),
+            theme: Some(Theme::Quai),
             graphics: Some(Graphics::Auto),
             notify: Some(false),
             ..Partial::default()

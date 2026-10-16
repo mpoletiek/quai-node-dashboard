@@ -1,5 +1,9 @@
 <title>Quai Dive</title>
 <meta name="description" content="Live monitor for a Quai node (rs-quai or go-quai): chain heads, blocks, workshares by algorithm, peers, logs.">
+<!-- The look the page opens in when the address names none and the browser
+     has no saved choice: quai-dash writes its --theme here. -->
+<meta name="quai-dash-look" content="quai">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 46'%3E%3Cpath fill='%23E20101' d='M29.9415 23C29.9394 21.1596 29.2075 19.3952 27.9061 18.0939C26.6048 16.7926 24.8404 16.0606 23.0001 16.0586C22.3607 16.0588 21.7245 16.1476 21.1095 16.3223C19.6357 16.7435 18.3421 17.6393 17.4295 18.8707C16.5386 20.0631 16.0572 21.5116 16.0571 23C16.0592 24.8408 16.7913 26.6055 18.0929 27.9071C19.3945 29.2088 21.1593 29.9409 23.0001 29.9429C23.589 29.9411 24.1754 29.8643 24.745 29.7145L27.3394 33.5616C28.7345 32.9883 30.0024 32.1446 31.07 31.0791L28.4848 27.2458C29.43 26.0324 29.9427 24.5381 29.9415 23Z'/%3E%3Cpath fill='%23E20101' d='M23 0C16.9 0 11.0499 2.42321 6.73654 6.73654C2.4232 11.0499 0 16.9 0 23C0 29.1 2.4232 34.9501 6.73654 39.2635C8.87229 41.3992 11.4078 43.0934 14.1983 44.2492C16.9888 45.4051 19.9796 46 23 46C29.1 46 34.9501 43.5768 39.2635 39.2635C43.5768 34.9501 46 29.1 46 23C46 16.9 43.5768 11.0499 39.2635 6.73654C34.9501 2.42321 29.1 0 23 0V0ZM33.6245 34.8711L29.9107 37.3765L27.3363 33.5616C25.9605 34.1266 24.4873 34.4168 23 34.4157C19.9718 34.4157 17.0676 33.2131 14.9257 31.0725C12.7839 28.9318 11.5798 26.0282 11.5782 23C11.5754 20.019 12.7426 17.156 14.8289 15.0267C15.8816 13.9465 17.1374 13.0851 18.5242 12.4921C19.9393 11.8893 21.4619 11.5795 23 11.5813C26.0287 11.5813 28.9334 12.7842 31.0754 14.9256C33.2173 17.0669 34.421 19.9713 34.4218 23C34.4239 24.5024 34.1285 25.9904 33.5527 27.3781C32.9769 28.7657 32.132 30.0257 31.0669 31.0853L33.6245 34.8711Z'/%3E%3C/svg%3E">
 <style>
 /* Fonts ship with quai-dash (web/fonts, SIL Open Font License; see the
    OFL-*.txt files there): the page loads nothing from other sites. */
@@ -13,14 +17,49 @@
 @font-face { font-family: "Shippori Mincho B1"; font-weight: 800; font-display: swap; src: url("fonts/shippori-mincho-b1-800.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Shippori Mincho B1"; font-weight: 800; font-display: swap; src: url("fonts/shippori-mincho-b1-800-jp.woff2") format("woff2"); unicode-range: U+3000-9FFF, U+FF00-FFEF; }
 @font-face { font-family: "Noto Sans JP"; font-weight: 300 500; font-display: swap; src: url("fonts/noto-sans-jp-jp.woff2") format("woff2"); unicode-range: U+3000-9FFF, U+FF00-FFEF; }
-/* Two looks, both dark by design: the page paints every color itself. */
+@font-face { font-family: "Bai Jamjuree"; font-weight: 400; font-display: swap; src: url("fonts/bai-jamjuree-400.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Bai Jamjuree"; font-weight: 600; font-display: swap; src: url("fonts/bai-jamjuree-600.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Unbounded"; font-weight: 400 800; font-display: swap; src: url("fonts/unbounded.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+/* Three looks, all dark by design: the page paints every color itself. */
 :root {
   color-scheme: dark;
   --gut: clamp(16px, 2.2vw, 28px);
   --gap: 14px;
   --mono: "Share Tech Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
-  /* GHOST palette (default) */
+  /* QUAI palette (default): Quai Network's own colours (qu.ai). The brand
+     red is the brand; alerts are a lighter red that always comes with a
+     label or an inverted badge, never colour alone. */
+  --brand: #e20101;
+  --brand-hi: #ff3b2f;
+  --peach: #f0a16d;
+  --peach-deep: #a84f26;
+  --bg: #170b07;
+  --bg2: #25120d;
+  --panel: rgba(44, 20, 12, .74);
+  --panel-edge: rgba(255, 204, 173, .16);
+  --line: rgba(255, 219, 191, .12);
+  --fg: #f6e8dc;
+  --fg2: #d0b29e;
+  --dim: #a07a64;
+  --acc: #e20101;
+  --acc-soft: rgba(226, 1, 1, .16);
+  --hot: #ff5656;
+  --warn: #ffc454;
+  --ok: #6ee7a0;
+  --bad: #ff5656;
+  --tier-prime: #ff3b2f;
+  --tier-region: #f0a16d;
+  --tier-zone: #f6e8dc;
+  --a-kawpow: #ff3b2f;
+  --a-sha: #f0a16d;
+  --a-scrypt: #ffc454;
+  --display: "Unbounded", "Segoe UI", sans-serif;
+  --label: "Bai Jamjuree", "Segoe UI", sans-serif;
+  --label-track: .14em;
+  --radius: 10px;
+}
+body[data-look="ghost"] {
   --bg: #01070b;
   --bg2: #04131b;
   --panel: rgba(6, 28, 36, .62);
@@ -377,6 +416,105 @@ a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; 
   .kv .v { white-space: normal; overflow-wrap: anywhere; }
   .marow { grid-template-columns: 64px minmax(0, 1fr) auto; }
 }
+
+/* ---------- QUAI: Quai Network's own look ---------- */
+.qlogo, .qalgos { display: none; }
+body[data-look="quai"] { font-size: 13.5px; }
+body[data-look="quai"] .scan, body[data-look="quai"] .sweep { display: none; }
+body[data-look="quai"] .top { border-bottom-color: var(--line); padding-block: 8px 16px; }
+body[data-look="quai"] .brand { align-items: center; gap: 12px; }
+body[data-look="quai"] .qlogo { display: block; width: 34px; height: 34px; flex: none; fill: var(--brand); }
+body[data-look="quai"] .brand .mark { font: 700 22px/1 var(--display); letter-spacing: .06em; color: var(--fg); text-shadow: none; }
+body[data-look="quai"] .brand .jp { font: 600 10.5px var(--label); letter-spacing: .26em; color: var(--dim); padding-left: 12px; border-left: 1px solid var(--line); }
+body[data-look="quai"] .chip { border-radius: 999px; padding: 3px 11px; font-size: 11.5px; }
+body[data-look="quai"] a.chip, body[data-look="quai"] a.xl:hover, body[data-look="quai"] a.xl:focus-visible,
+body[data-look="quai"] #log mark, body[data-look="quai"] .mnote code { color: var(--peach); }
+/* An alarm is an inverted badge with its word in it, not only a colour. */
+body[data-look="quai"] .chip.off { background: var(--hot); border-color: var(--hot); color: var(--bg); }
+body[data-look="quai"] .chip.off .dot { background: var(--bg); box-shadow: none; animation: blink 1s steps(2) infinite; }
+body[data-look="quai"] .looks { border-radius: 999px; overflow: hidden; }
+body[data-look="quai"] .looks button { padding: 6px 14px; }
+body[data-look="quai"] .looks button[aria-pressed="true"], body[data-look="quai"] .btn[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
+body[data-look="quai"] .btn { border-radius: 999px; padding: 3px 11px; }
+body[data-look="quai"] .clock { color: var(--fg2); }
+body[data-look="quai"] .panel { border: 1px solid var(--panel-edge); box-shadow: 0 18px 50px rgba(0, 0, 0, .28); backdrop-filter: blur(6px); }
+body[data-look="quai"] .panel::before, body[data-look="quai"] .panel::after { display: none; }
+body[data-look="quai"] .ph { align-items: center; }
+body[data-look="quai"] .ph h2 { font: 600 12px var(--label); letter-spacing: var(--label-track); color: var(--fg); display: inline-flex; align-items: center; gap: 9px; }
+body[data-look="quai"] .ph h2::before { content: ""; width: 14px; height: 2px; background: var(--brand); border-radius: 2px; flex: none; }
+body[data-look="quai"] .ph .jp { display: none; }
+body[data-look="quai"] .lbl { font: 600 10.5px var(--label); letter-spacing: .12em; }
+body[data-look="quai"] .height { font: 600 clamp(34px, 3.9vw, 72px)/1.05 var(--display); letter-spacing: -.01em; color: var(--fg); text-shadow: none; }
+body[data-look="quai"] .height .chg { animation: qchg 1.8s ease-out forwards; }
+@keyframes qchg { 0%, 25% { color: var(--peach); text-shadow: 0 0 26px rgba(240, 161, 109, .55); } 100% { color: var(--fg); text-shadow: none; } }
+body[data-look="quai"] .hero-meta .v { font-size: 17px; }
+body[data-look="quai"] .timerbox { width: 196px; height: 222px; }
+body[data-look="quai"] .tier .name { font: 600 12px var(--label); letter-spacing: .14em; }
+body[data-look="quai"] .tier .n { font: 500 18px var(--display); }
+body[data-look="quai"] .tier .age { height: 4px; border-radius: 4px; }
+body[data-look="quai"] .tier .age i { border-radius: 4px; }
+/* Proof of work: one table and one trend chart, not a card per algorithm. */
+body[data-look="quai"] .algos { display: none; }
+body[data-look="quai"] #algos { display: flex; flex-direction: column; }
+body[data-look="quai"] .qalgos { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.qat { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.qat th { text-align: right; font: 600 10px var(--label); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); padding: 0 0 8px 8px; white-space: nowrap; }
+.qat th:first-child { text-align: left; padding-left: 0; }
+.qat td { text-align: right; padding: 9px 0 9px 8px; border-top: 1px solid var(--line); color: var(--fg2); font-size: 12.5px; white-space: nowrap; }
+.qat td:first-child { text-align: left; padding-left: 0; font: 600 12px var(--label); letter-spacing: .1em; color: var(--fg); }
+.qat td.hr { font: 500 15px var(--display); color: var(--fg); letter-spacing: -.01em; }
+.qat td.off { color: var(--hot); }
+.qat .sw { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: 0; }
+.qat .pd.on { color: var(--peach); }
+/* Basis 0: a canvas's own buffer must not size it (it would grow). */
+#qtrend { display: block; width: 100%; flex: 1 1 0; min-height: 132px; max-height: 260px; margin-top: 14px; }
+.qlegend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font: 600 10px var(--label); letter-spacing: .12em; color: var(--dim); text-transform: uppercase; }
+.qlegend i { display: inline-block; width: 14px; height: 2px; border-radius: 2px; margin-right: 6px; vertical-align: 3px; }
+body[data-look="quai"] .syncbig { font: 600 clamp(32px, 3.6vw, 48px)/1 var(--display); letter-spacing: -.01em; }
+body[data-look="quai"] .syncbar, body[data-look="quai"] .sv-bar { border-radius: 6px; }
+body[data-look="quai"] .syncbar i, body[data-look="quai"] .sv-bar i { border-radius: 6px; }
+body[data-look="quai"] .sv-bar i { background: linear-gradient(90deg, var(--peach-deep), var(--brand)); }
+body[data-look="quai"] .sv-pct { font-weight: 600; letter-spacing: -.01em; }
+body[data-look="quai"] .mine h3 { font: 600 11px var(--label); letter-spacing: .14em; }
+body[data-look="quai"] .mstats .v { font: 500 22px var(--display); }
+body[data-look="quai"] .marow .an { font: 600 12px var(--label); letter-spacing: .1em; }
+body[data-look="quai"] .marow .bar, body[data-look="quai"] .marow .bar i { border-radius: 3px; }
+body[data-look="quai"] .wt th { font: 600 10px var(--label); letter-spacing: .12em; }
+body[data-look="quai"] .ev, body[data-look="quai"] .fs { border-left-width: 2px; border-radius: 0 6px 6px 0; }
+body[data-look="quai"] .ev.reorg, body[data-look="quai"] .ev.stall, body[data-look="quai"] .ev.offline, body[data-look="quai"] .ev.mismatch { background: rgba(255, 86, 86, .07); }
+body[data-look="quai"] .ev.reorg span::before, body[data-look="quai"] .ev.stall span::before, body[data-look="quai"] .ev.offline span::before, body[data-look="quai"] .ev.mismatch span::before {
+  content: "ALERT"; display: inline-block; margin-right: 7px; padding: 0 6px; border-radius: 4px; background: var(--hot); color: var(--bg); font: 600 10px/1.6 var(--label); letter-spacing: .12em; }
+body[data-look="quai"] #log .ERROR { background: rgba(255, 86, 86, .06); }
+body[data-look="quai"] #log .fresh { animation-name: qlogfresh; }
+@keyframes qlogfresh { from { background: rgba(240, 161, 109, .10); } to { background: transparent; } }
+body[data-look="quai"] .boot { color: var(--fg2); text-shadow: none; border-left: 2px solid var(--brand); padding-left: 10px; font-family: var(--label); letter-spacing: .08em; }
+/* Moments: a card that rises from the bottom, its header in the tier's colour. */
+.qbanner { position: fixed; left: 50%; bottom: clamp(20px, 6vh, 56px); z-index: 59; pointer-events: none; width: min(440px, calc(100vw - 2 * var(--gut)));
+  transform: translateX(-50%); animation: qrise .45s cubic-bezier(.2, .8, .2, 1), fadeout 2.8s ease-in forwards; }
+.qcard { position: relative; overflow: hidden; border-radius: 12px; background: var(--bg2); border: 1px solid var(--panel-edge); box-shadow: 0 24px 60px rgba(0, 0, 0, .55); text-align: left; }
+.qcard .qh { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--brand); color: #fff; font: 700 15px var(--display); letter-spacing: .04em; }
+.qcard .qh svg { width: 22px; height: 22px; fill: currentColor; flex: none; }
+.qcard.region .qh { background: var(--peach); color: var(--bg); }
+.qcard.mined .qh { background: var(--ok); color: var(--bg); }
+.qcard.alert .qh { background: var(--hot); color: var(--bg); }
+.qcard .qb { padding: 12px 16px 16px; font: 13px/1.45 var(--mono); color: var(--fg); overflow-wrap: anywhere; }
+.qcard .qb:empty { display: none; }
+.qcard .qbar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--brand); transform-origin: left; animation: qshrink 2.8s linear forwards; }
+.qcard.region .qbar { background: var(--peach); } .qcard.mined .qbar { background: var(--ok); } .qcard.alert .qbar { background: var(--hot); }
+@keyframes qrise { from { transform: translate(-50%, 40px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+@keyframes qshrink { to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .qbanner { animation: fadeout 2.8s steps(1) forwards; }
+  .qcard .qbar { animation: none; }
+  body[data-look="quai"] .height .chg { animation: none; }
+}
+@media (max-width: 720px) {
+  body[data-look="quai"] .qlogo { width: 28px; height: 28px; }
+  body[data-look="quai"] .brand .mark { font-size: 19px; }
+  body[data-look="quai"] .brand .jp { display: none; }
+  body[data-look="quai"] .timerbox { justify-self: center; }
+  .qat td.st, .qat th.st { display: none; }
+}
 </style>
 
 <canvas id="bgfx" aria-hidden="true"></canvas>
@@ -385,7 +523,7 @@ a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; 
 
 <div class="wrap">
   <header class="top">
-    <div class="brand"><span class="mark" id="mark">QUAI DIVE</span><span class="jp" id="markjp">電脳 監視</span></div>
+    <div class="brand"><svg class="qlogo" viewBox="0 0 46 46" aria-hidden="true"><path id="qlogo-q" d="M29.9415 23C29.9394 21.1596 29.2075 19.3952 27.9061 18.0939C26.6048 16.7926 24.8404 16.0606 23.0001 16.0586C22.3607 16.0588 21.7245 16.1476 21.1095 16.3223C19.6357 16.7435 18.3421 17.6393 17.4295 18.8707C16.5386 20.0631 16.0572 21.5116 16.0571 23C16.0592 24.8408 16.7913 26.6055 18.0929 27.9071C19.3945 29.2088 21.1593 29.9409 23.0001 29.9429C23.589 29.9411 24.1754 29.8643 24.745 29.7145L27.3394 33.5616C28.7345 32.9883 30.0024 32.1446 31.07 31.0791L28.4848 27.2458C29.43 26.0324 29.9427 24.5381 29.9415 23Z"/><path id="qlogo-ring" d="M23 0C16.9 0 11.0499 2.42321 6.73654 6.73654C2.4232 11.0499 0 16.9 0 23C0 29.1 2.4232 34.9501 6.73654 39.2635C8.87229 41.3992 11.4078 43.0934 14.1983 44.2492C16.9888 45.4051 19.9796 46 23 46C29.1 46 34.9501 43.5768 39.2635 39.2635C43.5768 34.9501 46 29.1 46 23C46 16.9 43.5768 11.0499 39.2635 6.73654C34.9501 2.42321 29.1 0 23 0V0ZM33.6245 34.8711L29.9107 37.3765L27.3363 33.5616C25.9605 34.1266 24.4873 34.4168 23 34.4157C19.9718 34.4157 17.0676 33.2131 14.9257 31.0725C12.7839 28.9318 11.5798 26.0282 11.5782 23C11.5754 20.019 12.7426 17.156 14.8289 15.0267C15.8816 13.9465 17.1374 13.0851 18.5242 12.4921C19.9393 11.8893 21.4619 11.5795 23 11.5813C26.0287 11.5813 28.9334 12.7842 31.0754 14.9256C33.2173 17.0669 34.421 19.9713 34.4218 23C34.4239 24.5024 34.1285 25.9904 33.5527 27.3781C32.9769 28.7657 32.132 30.0257 31.0669 31.0853L33.6245 34.8711Z"/></svg><span class="mark" id="mark">QUAI</span><span class="jp" id="markjp">NODE DASHBOARD</span></div>
     <div class="who">
       <span class="chip" id="status"><span class="dot"></span><span id="statustext">CONNECTING</span></span>
       <span id="nodelabel">—</span><span class="chip" id="nodekind" hidden></span><span id="nodeloc"></span>
@@ -393,7 +531,8 @@ a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; 
     </div>
     <div class="spacer"></div>
     <div class="looks" role="group" aria-label="Look">
-      <button type="button" id="look-ghost" aria-pressed="true">GHOST</button>
+      <button type="button" id="look-quai" aria-pressed="true">QUAI</button>
+      <button type="button" id="look-ghost" aria-pressed="false">GHOST</button>
       <button type="button" id="look-angel" aria-pressed="false">ANGEL</button>
     </div>
     <span class="lbl keys" title="Keyboard: T switches the look, C turns the full-screen moments on or off">T look · C cinematics</span>
@@ -449,6 +588,11 @@ a.xl:hover, a.xl:focus-visible { color: var(--acc); border-bottom-style: solid; 
         <div class="algo" id="algo-sha"><span class="an">SHA·2</span><span class="hr num">—</span><span class="meta"><span>share <b class="st">—</b></span><span>pending <b class="pd">0</b></span></span><canvas></canvas><span class="verdict"><span class="jp">承認</span>APPROVED</span></div>
         <div class="algo" id="algo-scrypt"><span class="an">SCRYPT·3</span><span class="hr num">—</span><span class="meta"><span>share <b class="st">—</b></span><span>pending <b class="pd">0</b></span></span><canvas></canvas><span class="verdict"><span class="jp">承認</span>APPROVED</span></div>
         <div class="consensus" id="consensus">合議 · <b>3 / 3 APPROVED</b></div>
+      </div>
+      <div class="qalgos">
+        <table class="qat"><thead><tr><th>Algorithm</th><th>Hashrate</th><th class="st">Share time</th><th>Pending</th></tr></thead><tbody id="qa-body"></tbody></table>
+        <canvas id="qtrend" aria-label="Hashrate trend of the three algorithms, each on its own scale"></canvas>
+        <div class="qlegend"><span><i style="background:var(--a-kawpow)"></i>KawPoW</span><span><i style="background:var(--a-sha)"></i>SHA</span><span><i style="background:var(--a-scrypt)"></i>Scrypt</span><span>each line on its own scale</span></div>
       </div>
     </section>
 
@@ -592,15 +736,23 @@ function sizeCanvas(cv) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   return { ctx, w: r.width, h: r.height };
 }
-// Scrambles digits briefly before settling (GHOST) or flips instantly (ANGEL).
+// Scrambles digits briefly before settling (GHOST), flips instantly
+// (ANGEL), or lights the digits that changed (QUAI).
 const scrambling = new Map();
 function setNum(el, text) {
   if (el.dataset.v === text) return;
+  const prev = el.dataset.v;
   el.dataset.v = text;
-  if (reduceMotion || look === "angel" || !el.dataset.scr) { el.textContent = text; return; }
+  clearInterval(scrambling.get(el));
+  if (L.digits && el.dataset.diff && prev && /\d/.test(prev)) {
+    // Right-aligned: the last digits are the ones a new block changes.
+    const off = text.length - prev.length;
+    el.innerHTML = [...text].map((c, i) => (c !== prev[i - off] ? `<span class="chg">${esc(c)}</span>` : esc(c))).join("");
+    return;
+  }
+  if (reduceMotion || !L.scramble || !el.dataset.scr) { el.textContent = text; return; }
   const glyphs = "0123456789ABCDEFｱｲｳｴｵｶｷｸ";
   let f = 0;
-  clearInterval(scrambling.get(el));
   const id = setInterval(() => {
     f++;
     el.textContent = [...text].map((c, i) => (/[0-9]/.test(c) && i >= f - 2 ? glyphs[(Math.random() * glyphs.length) | 0] : c)).join("");
@@ -630,35 +782,70 @@ const landN = new Uint32Array(LAND_LEVELS);
 let flatLand = null, flatLandKey = "";
 
 // ---------------------------------------------------------------- look
-let look = ["#ghost", "#angel"].includes(location.hash) ? location.hash.slice(1) : store.get("quaidive.look", "ghost");
+// What each look draws its pieces with; the drawing code asks these, not
+// the look's name. QUAI is Quai Network's own look and the default.
+const LOOKS = {
+  quai: { mark: "QUAI", sub: "NODE DASHBOARD", bg: "rings", timer: "q", algos: "table", map: "ring", tape: "circles", banner: "card",
+    scramble: false, digits: true, jp: false, sync: "Node agreement", boot: "Connecting to the node: RPC · chain heads · workshares · peers · log" },
+  ghost: { mark: "QUAI DIVE", sub: "電脳 監視", bg: "grid", timer: "ring", algos: "cards", map: "globe", tape: "glow", banner: "glitch",
+    scramble: true, digits: false, jp: true, sync: "Sync ratio", boot: "> DIVE // linking node RPC · chain heads · workshares · peers · log" },
+  angel: { mark: "QUAI DIVE", sub: "同期 監視 室", bg: "hex", timer: "seg", algos: "triad", map: "flat", tape: "square", banner: "stripe",
+    scramble: false, digits: false, jp: true, sync: "Synchronization ratio", boot: "> DIVE // linking node RPC · chain heads · workshares · peers · log" },
+};
+const LOOK_ORDER = ["quai", "ghost", "angel"];
+const isLook = (l) => LOOK_ORDER.includes(l);
+// The look a visit opens in: the address (#quai, #ghost, #angel), else the
+// visitor's own pick (saved only when they choose one), else the server's
+// default (--theme), else QUAI.
+const LOOK_KEY = "quaidive.look.v2";
+const serverLook = (document.querySelector('meta[name="quai-dash-look"]') || {}).content;
+let look = [location.hash.slice(1), store.get(LOOK_KEY, ""), serverLook].find(isLook) || "quai";
+let L = LOOKS[look];
 let cinematics = store.get("quaidive.cine", "on") !== "off";
-function setLook(l) {
-  look = l === "angel" ? "angel" : "ghost";
+function setLook(l, picked) {
+  look = isLook(l) ? l : "quai";
+  L = LOOKS[look];
   document.body.dataset.look = look;
-  $("look-ghost").setAttribute("aria-pressed", String(look === "ghost"));
-  $("look-angel").setAttribute("aria-pressed", String(look === "angel"));
-  $("mark").textContent = look === "ghost" ? "QUAI DIVE" : "QUAI DIVE";
-  $("markjp").textContent = look === "ghost" ? "電脳 監視" : "同期 監視 室";
+  for (const k of LOOK_ORDER) $("look-" + k).setAttribute("aria-pressed", String(look === k));
+  $("mark").textContent = L.mark;
+  $("markjp").textContent = L.sub;
   $("herotitle").textContent = "Zone height";
-  store.set("quaidive.look", look);
+  if (picked) store.set(LOOK_KEY, look);
   drawBg();
   if (lastState) render(lastState, true);
 }
-$("look-ghost").onclick = () => setLook("ghost");
-$("look-angel").onclick = () => setLook("angel");
+for (const k of LOOK_ORDER) $("look-" + k).onclick = () => setLook(k, true);
 addEventListener("keydown", (e) => {
   if (e.target.closest && e.target.closest("input,textarea")) return;
-  if (e.key === "t" || e.key === "T") setLook(look === "ghost" ? "angel" : "ghost");
+  if (e.key === "t" || e.key === "T") setLook(LOOK_ORDER[(LOOK_ORDER.indexOf(look) + 1) % LOOK_ORDER.length], true);
   if (e.key === "c" || e.key === "C") { cinematics = !cinematics; store.set("quaidive.cine", cinematics ? "on" : "off"); toast(cinematics ? "Cinematics on" : "Cinematics off"); }
 });
 
 // ---------------------------------------------------------------- background
+// Quai's logo (the header's SVG, a 46-unit square): the thick ring with its
+// slot, and the small Q inside whose tail points into the slot.
+const QRING = new Path2D($("qlogo-ring").getAttribute("d"));
+const QDOT = new Path2D($("qlogo-q").getAttribute("d"));
+// The slot and the tail point down and right, 56° below the horizontal.
+const QTAIL = (56 * Math.PI) / 180;
 function drawBg() {
   const cv = $("bgfx");
   const { ctx, w, h } = sizeCanvas(cv);
   ctx.clearRect(0, 0, w, h);
   const acc = css("--acc");
-  if (look === "angel") {
+  if (L.bg === "rings") {
+    // A warm glow, and the logo's ring drawn huge and faint off the corner.
+    const g = ctx.createRadialGradient(w * 0.5, h * 0.2, 0, w * 0.5, h * 0.2, Math.max(w, h) * 0.8);
+    g.addColorStop(0, "rgba(120,40,16,.20)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    const S = Math.max(w, h) * 0.95, k = S / 46;
+    ctx.save(); ctx.translate(w - S * 0.42, h - S * 0.45); ctx.scale(k, k);
+    ctx.fillStyle = hexA(css("--brand"), 0.035); ctx.fill(QRING, "evenodd");
+    ctx.strokeStyle = hexA(css("--peach"), 0.07); ctx.lineWidth = 1 / k; ctx.stroke(QRING);
+    ctx.restore();
+    return;
+  }
+  if (L.bg === "hex") {
     // Hexagon field, brighter near the bottom right.
     const r = 22, dx = r * Math.sqrt(3), dy = r * 1.5;
     for (let row = -1, y = 0; y < h + r; row++, y = row * dy) {
@@ -701,7 +888,10 @@ function banner(kind, title, sub) {
   const host = $("cine");
   const el = document.createElement("div");
   el.className = "banner";
-  if (look === "ghost") {
+  if (L.banner === "card") {
+    el.className = "qbanner";
+    el.innerHTML = `<div class="qcard ${esc(kind)}"><div class="qh"><svg viewBox="0 0 46 46" aria-hidden="true"><path d="${$("qlogo-q").getAttribute("d")}"/><path d="${$("qlogo-ring").getAttribute("d")}"/></svg>${esc(title)}</div><div class="qb">${esc(sub)}</div><i class="qbar"></i></div>`;
+  } else if (L.banner === "glitch") {
     el.innerHTML = `<div class="ghost-hit${kind === "mined" ? " okc" : kind === "region" ? " reg" : ""}">${esc(title)}<small>${esc(sub)}</small></div>`;
   } else {
     el.innerHTML = `<div class="angel-banner"><div class="${kind === "region" ? "amber" : kind === "mined" ? "okc" : ""}">${esc(title)}</div></div>`;
@@ -731,13 +921,16 @@ function nodeBehind() {
 }
 function onEvent(ev) {
   if ((ev.kind === "prime" || ev.kind === "region") && nodeBehind()) return;
+  const quai = L.banner === "card", angel = L.banner === "stripe";
   if (ev.kind === "prime") {
     const n = ev.text.match(/Prime block (\d+)/);
     const num = n ? Number(n[1]).toLocaleString("en-US") : "";
-    if (look === "angel" && performance.now() - lastTitleCard > 90000) {
+    if (quai) {
+      banner("prime", "PRIME BLOCK", num ? "Prime #" + num + (ev.number ? " · zone #" + ev.number.toLocaleString("en-US") : "") : ev.text);
+    } else if (angel && performance.now() - lastTitleCard > 90000) {
       lastTitleCard = performance.now();
       titleCard("prime", ["第 " + num + " 話", "PRIME", "主鎖到達 · zone " + (ev.number || "").toLocaleString("en-US")]);
-    } else if (look === "angel") {
+    } else if (angel) {
       banner("prime", "PATTERN PRIME", "");
     } else {
       banner("prime", "PRIME CONVERGENCE", "主鎖到達 · " + num);
@@ -746,17 +939,19 @@ function onEvent(ev) {
   } else if (ev.kind === "region") {
     const n = ev.text.match(/Region block (\d+)/);
     const num = n ? Number(n[1]).toLocaleString("en-US") : "";
-    if (look === "angel") banner("region", "PATTERN REGION", "");
+    if (quai) banner("region", "REGION BLOCK", num ? "Region #" + num : ev.text);
+    else if (angel) banner("region", "PATTERN REGION", "");
     else banner("region", "REGION CONVERGENCE", "領域収束 · " + num);
     flashTier("region");
   } else if (ev.kind === "mined") {
-    if (look === "angel") titleCard("mined", ["採掘 · STRATUM", "MINED", ev.text]);
+    if (quai) banner("mined", "BLOCK MINED", ev.text);
+    else if (angel) titleCard("mined", ["採掘 · STRATUM", "MINED", ev.text]);
     else banner("mined", "BLOCK ACQUIRED", "採掘成功 · " + ev.text);
     flashMine();
   } else if (ev.kind === "workshare") {
     flashMine();
   } else if (["reorg", "stall", "mismatch", "offline"].includes(ev.kind)) {
-    banner("alert", look === "angel" ? "警告 " + ev.kind.toUpperCase() : ev.kind.toUpperCase() + " DETECTED", ev.text);
+    banner("alert", quai ? "ALERT · " + ev.kind.toUpperCase() : angel ? "警告 " + ev.kind.toUpperCase() : ev.kind.toUpperCase() + " DETECTED", ev.text);
   }
 }
 function flashMine() {
@@ -1019,7 +1214,7 @@ function render(s, full) {
   // Far behind: the syncing panel only, and none of the dashboard's DOM.
   if (renderSync(s)) return;
   const zone = s.chains.zone;
-  const h = $("height"); h.dataset.scr = "1";
+  const h = $("height"); h.dataset.scr = "1"; h.dataset.diff = "1";
   setNum(h, zone ? fmtInt(zone.number) : "— — —");
   $("herohash").textContent = zone ? zone.hash.slice(0, 10) + "…" + zone.hash.slice(-6) : (s.node.error || "");
   const last = s.blocks[s.blocks.length - 1];
@@ -1048,6 +1243,16 @@ function render(s, full) {
     el.querySelector(".verdict").innerHTML = ok ? '<span class="jp">承認</span>APPROVED' : '<span class="jp">否決</span>DENIED';
   }
   $("consensus").innerHTML = "合議 · <b style=\"color:" + (approved === 3 ? "var(--ok)" : "var(--bad)") + "\">" + approved + " / 3 APPROVED</b>";
+  if (L.algos === "table") {
+    // An algorithm with no hashrate says so in words, not only in red.
+    $("qa-body").innerHTML = [["kawpow", "KawPoW", "--a-kawpow"], ["sha", "SHA", "--a-sha"], ["scrypt", "Scrypt", "--a-scrypt"]].map(([k, name, c]) => {
+      const a = m ? m[k] : null, on = !!(a && a.hashrate > 0);
+      return `<tr><td><span class="sw" style="background:var(${c})"></span>${name}</td>` +
+        `<td class="hr${on ? "" : " off"}">${a ? (on ? si(a.hashrate) : "NO HASHRATE") : "—"}</td>` +
+        `<td class="st">${a && a.share_time ? a.share_time.toFixed(2) + " s" : "—"}</td>` +
+        `<td class="pd${p[k] ? " on" : ""}">${p[k]}</td></tr>`;
+    }).join("");
+  }
   $("algoaside").textContent = m ? "over " + m.blocks_analyzed + " blocks" : "";
   // Peers.
   $("pin").textContent = s.peers.inbound || "0";
@@ -1067,7 +1272,7 @@ function render(s, full) {
   const c = s.compare;
   if (c) {
     const pct = c.compared ? (100 * c.matched / c.compared) : 0;
-    $("synctitle").textContent = look === "angel" ? "Synchronization ratio" : "Sync ratio";
+    $("synctitle").textContent = L.sync;
     $("syncbig").textContent = c.compared ? pct.toFixed(1) + "%" : "—";
     $("syncbig").style.color = pct >= 100 ? "var(--ok)" : "var(--bad)";
     $("syncbar").style.width = pct + "%";
@@ -1252,7 +1457,37 @@ function drawTimer(now) {
   const avg = lastState && lastState.mining ? lastState.mining.avg_block_time : 5;
   const late = t > avg * 3;
   const acc = css("--acc"), hot = css("--hot"), ok = css("--ok"), dim = css("--dim"), fg = css("--fg");
-  if (look === "angel") {
+  if (L.timer === "q") {
+    // Quai's ring: the logo's ring is the dial, filled clockwise from 12
+    // o'clock over two average block times (as in the terminal); the
+    // label sits beneath it.
+    const ringH = h - 24, S = Math.min(w, ringH) - 14, k = S / 46, cx = w / 2, cy = ringH / 2;
+    const brand = css("--brand"), arc = late ? hot : brand, f = Math.min(1, t / Math.max(1, avg * 2));
+    ctx.save(); ctx.translate(cx - 23 * k, cy - 23 * k); ctx.scale(k, k);
+    ctx.fillStyle = hexA(brand, 0.14); ctx.fill(QRING, "evenodd");
+    ctx.save(); ctx.clip(QRING, "evenodd");
+    ctx.fillStyle = arc; ctx.beginPath(); ctx.moveTo(23, 23); ctx.arc(23, 23, 24, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = hexA(brand, 0.12); ctx.fill(QDOT);
+    ctx.restore();
+    // new-block ping, in the colour of the block's highest tier
+    const age = (now - pulse) / 1000;
+    if (pulse && age < 1.2) {
+      const col = pulseOrder === 0 ? css("--tier-prime") : pulseOrder === 1 ? css("--tier-region") : css("--peach");
+      ctx.strokeStyle = hexA(col, 1 - age / 1.2); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, 23 * k + 2 + age * 6, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const big = t >= 1000;
+    ctx.fillStyle = late ? hot : fg; ctx.font = `600 ${big ? 15 : Math.round(S * 0.13)}px ${css("--display")}`;
+    ctx.fillText(big ? longAgo(t) : t.toFixed(1) + "s", cx, cy - (late ? 5 : 0));
+    if (late) { ctx.fillStyle = hot; ctx.font = `600 9px ${css("--label")}`; ctx.letterSpacing = "1.5px"; ctx.fillText("OVERDUE", cx + 1, cy + S * 0.11); }
+    ctx.fillStyle = dim; ctx.font = `600 10px ${css("--label")}`; ctx.letterSpacing = "2px";
+    ctx.fillText("SINCE LAST BLOCK", cx + 1, h - 8);
+    ctx.letterSpacing = "0px"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    return;
+  }
+  if (L.timer === "seg") {
     // Operation clock: MM:SS:CC in seven segments.
     const mm = Math.floor(t / 60) % 100, ss = Math.floor(t) % 60, cc = Math.floor((t % 1) * 100);
     const txt = String(mm).padStart(2, "0") + ":" + String(ss).padStart(2, "0") + ":" + String(cc).padStart(2, "0");
@@ -1320,11 +1555,12 @@ function drawSpark() {
   ctx.fillStyle = css("--dim"); ctx.font = `10px ${css("--mono")}`; ctx.fillText("block intervals · 5 s target", 4, 10);
 }
 function drawAlgos(now) {
+  if (L.algos === "table") { drawTrend(); return; }
   for (const k of ["kawpow", "sha", "scrypt"]) {
     const cv = $("algo-" + k).querySelector("canvas");
     const { ctx, w, h } = sizeCanvas(cv);
     ctx.clearRect(0, 0, w, h);
-    const d = hist[k], acc = look === "angel" ? css("--warn") : css("--acc");
+    const d = hist[k], acc = L.algos === "triad" ? css("--warn") : css("--acc");
     if (d.length > 1) {
       const mx = Math.max(...d), mn = Math.min(...d), span = mx - mn || mx || 1;
       ctx.strokeStyle = acc; ctx.lineWidth = 1.2; ctx.beginPath();
@@ -1340,7 +1576,36 @@ function drawAlgos(now) {
     }
   }
 }
-// Map: GHOST rotates a dot globe; ANGEL draws a flat hex-dot map with reticles.
+// QUAI: the three hashrates as stacked bands, each scaled to its own range
+// (their units differ by a million), newest on the right.
+function drawTrend() {
+  const { ctx, w, h } = sizeCanvas($("qtrend"));
+  ctx.clearRect(0, 0, w, h);
+  const keys = [["kawpow", "--a-kawpow"], ["sha", "--a-sha"], ["scrypt", "--a-scrypt"]];
+  const band = h / 3, line = css("--line");
+  if (hist.kawpow.length < 2) {
+    ctx.fillStyle = css("--dim"); ctx.font = `600 10px ${css("--label")}`;
+    ctx.fillText("COLLECTING SAMPLES…", 0, h / 2);
+    return;
+  }
+  keys.forEach(([k, v], j) => {
+    const d = hist[k], c = css(v), top = j * band + 6, bot = (j + 1) * band - 4;
+    ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, bot + 0.5); ctx.lineTo(w, bot + 0.5); ctx.stroke();
+    if (d.length < 2) return;
+    // At least ±5 % of the level: jitter stays small, a real swing fills the band.
+    const mx = Math.max(...d), mn = Math.min(...d), mid = (mx + mn) / 2, span = Math.max(mx - mn, mid * 0.1) || 1;
+    // Across the chart whatever the history holds, the newest sample at the right.
+    const X = (i) => w - 6 - ((d.length - 1 - i) / (d.length - 1)) * (w - 12), Y = (val) => bot - (0.5 + (val - mid) / span) * (bot - top);
+    const g = ctx.createLinearGradient(0, top, 0, bot); g.addColorStop(0, hexA(c, 0.22)); g.addColorStop(1, hexA(c, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(X(0), bot);
+    d.forEach((val, i) => ctx.lineTo(X(i), Y(val))); ctx.lineTo(X(d.length - 1), bot); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = c; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.beginPath();
+    d.forEach((val, i) => (i ? ctx.lineTo(X(i), Y(val)) : ctx.moveTo(X(i), Y(val)))); ctx.stroke();
+    const li = d.length - 1; ctx.fillStyle = c; ctx.beginPath(); ctx.arc(X(li), Y(d[li]), 2.6, 0, 7); ctx.fill();
+  });
+}
+// Map: GHOST rotates a dot globe; ANGEL draws a flat hex-dot map with
+// reticles; QUAI turns the globe inside the logo's ring.
 // Dragging spins the globe (mouse, pen or a horizontal swipe; `touch-action:
 // pan-y` leaves vertical swipes to page scrolling) and lets it coast a little.
 let rotLon = -40, dragging = null, spinV = 0;
@@ -1366,7 +1631,8 @@ function drawMap(now) {
   const s = lastState, acc = css("--acc"), hot = css("--hot");
   const peers = s ? s.peers.list.filter((p) => p.place) : [];
   const here = s && s.peers.here;
-  if (look === "angel") {
+  if (L.map === "ring") { drawRingMap(ctx, w, h, now, s, peers, here); return; }
+  if (L.map === "flat") {
     const mw = Math.min(w, h * 2), mh = mw / 2, ox = (w - mw) / 2, oy = (h - mh) / 2;
     const P = (lat, lon) => [ox + ((lon + 180) / 360) * mw, oy + ((90 - lat) / 180) * mh];
     ctx.strokeStyle = hexA(acc, 0.12); ctx.lineWidth = 1;
@@ -1474,6 +1740,103 @@ function drawMap(now) {
   ctx.fillStyle = css("--dim"); ctx.font = `11px ${css("--mono")}`;
   ctx.fillText(coarse ? "SWIPE TO ROTATE" : "DRAG TO ROTATE", 6, h - 8);
 }
+// QUAI: the globe is the Q's dot. A red ring (the logo's, thinner) frames
+// it, with the logo's slot on its inner edge at the lower right and the
+// Q's tail reaching from the globe into it.
+function drawRingMap(ctx, w, h, now, s, peers, here) {
+  if (!dragging) {
+    rotLon += 0.035 + spinV;
+    spinV *= 0.94;
+    if (Math.abs(spinV) < 0.01) spinV = 0;
+  }
+  const cx = w / 2, cy = h / 2 - 4, Ro = Math.min(w, h - 8) / 2 - 4;
+  const T = Math.max(6, Ro * 0.075), Ri = Ro - T, R = Ri - Math.max(7, Ro * 0.06), tilt = 0.32;
+  const brand = css("--brand"), peach = css("--peach"), gold = css("--warn"), red = css("--brand-hi"), fg2 = css("--fg2");
+  const ux = Math.cos(QTAIL), uy = Math.sin(QTAIL);
+  // A bar along the tail's direction from radius r0 to r1, `bw` wide.
+  const bar = (r0, r1, bw) => {
+    ctx.beginPath();
+    ctx.moveTo(cx + ux * r0 - uy * bw / 2, cy + uy * r0 + ux * bw / 2);
+    ctx.lineTo(cx + ux * r1 - uy * bw / 2, cy + uy * r1 + ux * bw / 2);
+    ctx.lineTo(cx + ux * r1 + uy * bw / 2, cy + uy * r1 - ux * bw / 2);
+    ctx.lineTo(cx + ux * r0 + uy * bw / 2, cy + uy * r0 - ux * bw / 2);
+    ctx.closePath();
+  };
+  // ring, then its slot cut out
+  ctx.fillStyle = hexA(brand, 0.92);
+  ctx.beginPath(); ctx.arc(cx, cy, Ro, 0, Math.PI * 2); ctx.arc(cx, cy, Ri, 0, Math.PI * 2, true); ctx.fill();
+  ctx.globalCompositeOperation = "destination-out";
+  bar(Ri - 2, Ri + T * 0.55, T * 1.7); ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+  // a faint outer hairline, like the logo's edge catching light
+  ctx.strokeStyle = hexA(peach, 0.12); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, Ro + 5, 0, Math.PI * 2); ctx.stroke();
+  // globe
+  const lon0 = (rotLon * Math.PI) / 180;
+  const proj = (lat, lon) => {
+    const la = (lat * Math.PI) / 180, lo = (lon * Math.PI) / 180 - lon0;
+    const x = Math.cos(la) * Math.sin(lo), y0 = Math.sin(la), z0 = Math.cos(la) * Math.cos(lo);
+    const y = y0 * Math.cos(tilt) - z0 * Math.sin(tilt), z = y0 * Math.sin(tilt) + z0 * Math.cos(tilt);
+    return [cx + x * R, cy - y * R, z];
+  };
+  const g = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.35, 0, cx, cy, R);
+  g.addColorStop(0, "rgba(240,161,109,.10)"); g.addColorStop(1, "rgba(240,161,109,.02)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
+  ctx.strokeStyle = hexA(peach, 0.07); ctx.lineWidth = 1;
+  for (let lat = -60; lat <= 60; lat += 30) { ctx.beginPath(); let started = false; for (let lon = -180; lon <= 180; lon += 6) { const [x, y, z] = proj(lat, lon); if (z < 0) { started = false; continue; } started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true; } ctx.stroke(); }
+  const ct = Math.cos(tilt), st = Math.sin(tilt);
+  landN.fill(0);
+  for (let i = 0; i < LAND_TRIG.length; i += 3) {
+    const cl = LAND_TRIG[i], lo = LAND_TRIG[i + 2] - lon0;
+    const z0 = cl * Math.cos(lo), y0 = LAND_TRIG[i + 1];
+    const z = y0 * st + z0 * ct;
+    if (z <= 0) continue;
+    const k = Math.min(LAND_LEVELS - 1, (z * LAND_LEVELS) | 0), n = landN[k];
+    landXY[k][n] = cx + cl * Math.sin(lo) * R; landXY[k][n + 1] = cy - (y0 * ct - z0 * st) * R;
+    landN[k] = n + 2;
+  }
+  const dot = Math.max(1.1, R / 150);
+  for (let k = 0; k < LAND_LEVELS; k++) {
+    ctx.fillStyle = hexA(fg2, 0.08 + 0.5 * (k + 0.5) / LAND_LEVELS);
+    const xy = landXY[k];
+    for (let j = 0; j < landN[k]; j += 2) ctx.fillRect(xy[j], xy[j + 1], dot, dot);
+  }
+  // the Q's tail, over the globe's edge and into the slot
+  ctx.fillStyle = hexA(brand, 0.92); bar(R * 0.94, Ri + T * 0.45, T * 1.05); ctx.fill();
+  const origin = here ? proj(here.lat, here.lon) : null;
+  const t = now / 1000;
+  peers.forEach((p, i) => {
+    const [x, y, z] = proj(p.place.lat, p.place.lon);
+    if (z <= 0) return;
+    if (origin && origin[2] > 0) {
+      const mx = (x + origin[0]) / 2, my = (y + origin[1]) / 2 - Math.hypot(x - origin[0], y - origin[1]) * 0.22;
+      ctx.strokeStyle = hexA(red, 0.28 * z); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(origin[0], origin[1]); ctx.quadraticCurveTo(mx, my, x, y); ctx.stroke();
+      const u = (t * 0.3 + i * 0.137) % 1, iu = 1 - u;
+      ctx.fillStyle = hexA(peach, 0.9 * z);
+      ctx.beginPath(); ctx.arc(iu * iu * origin[0] + 2 * iu * u * mx + u * u * x, iu * iu * origin[1] + 2 * iu * u * my + u * u * y, 1.4, 0, 7); ctx.fill();
+    }
+    ctx.strokeStyle = hexA(p.dir === "out" ? gold : peach, 0.35 + 0.65 * z); ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(x, y, 2.2 + 1.6 * z, 0, 7); ctx.stroke();
+  });
+  if (origin && origin[2] > 0) {
+    const ph = (t * 0.6) % 1;
+    ctx.strokeStyle = hexA(red, 0.8 * (1 - ph)); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(origin[0], origin[1], 6 + ph * 16, 0, 7); ctx.stroke();
+    ctx.fillStyle = red; ctx.beginPath(); ctx.arc(origin[0], origin[1], 4.5, 0, 7); ctx.fill();
+  }
+  // anonymous peers (no locations): an orbit just inside the ring
+  if (s && !peers.length && s.peers.count) {
+    const n = Math.min(s.peers.count, 120);
+    ctx.fillStyle = hexA(peach, 0.6);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + t * 0.12;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(a) * (R + (Ri - R) / 2), cy + Math.sin(a) * (R + (Ri - R) / 2), 1.3, 0, 7); ctx.fill();
+    }
+  }
+  ctx.fillStyle = css("--dim"); ctx.font = `600 10px ${css("--label")}`; ctx.letterSpacing = "1.5px";
+  ctx.fillText(coarse ? "SWIPE TO ROTATE" : "DRAG TO ROTATE", 6, h - 6);
+  ctx.letterSpacing = "0px";
+}
 let tapeHover = -1, tapeLayout = [];
 $("tape").addEventListener("pointermove", (e) => {
   const r = $("tape").getBoundingClientRect(), x = e.clientX - r.left;
@@ -1494,7 +1857,7 @@ function drawTape(now) {
   const { ctx, w, h } = sizeCanvas($("tape"));
   ctx.clearRect(0, 0, w, h);
   const s = lastState; if (!s || !s.blocks.length) return;
-  const angel = look === "angel";
+  const angel = L.tape === "square", quai = L.tape === "circles", glow = L.tape === "glow";
   const bs = s.blocks, wallS = s.now_ms / 1000 + (performance.now() - pollAt) / 1000;
   // A node that is behind (syncing, or stalled) has only old blocks: end the
   // window at its newest block rather than now, so they are laid out
@@ -1512,11 +1875,15 @@ function drawTape(now) {
   for (let k = 0; k < 3; k++) {
     const y = laneY[k];
     if (angel) { ctx.fillStyle = hexA(col[k], 0.06); ctx.fillRect(gutter, y - 14, w - gutter - right, 28); }
-    ctx.strokeStyle = hexA(col[k], angel ? 0.35 : 0.22); ctx.lineWidth = 1;
-    ctx.setLineDash(angel ? [] : [2, 5]); ctx.beginPath(); ctx.moveTo(gutter, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = hexA(col[k], angel ? 0.35 : quai ? 0.14 : 0.22); ctx.lineWidth = 1;
+    ctx.setLineDash(glow ? [2, 5] : []); ctx.beginPath(); ctx.moveTo(gutter, y); ctx.lineTo(w - right, y); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = col[k]; ctx.font = `600 12px ${css("--label")}`; ctx.textBaseline = "middle";
-    ctx.fillText(names[k], 6, y - 6);
-    ctx.fillStyle = dim; ctx.font = `300 10px ${css("--jp")}`; ctx.fillText(jp[k], 6, y + 8);
+    if (L.jp) {
+      ctx.fillText(names[k], 6, y - 6);
+      ctx.fillStyle = dim; ctx.font = `300 10px ${css("--jp")}`; ctx.fillText(jp[k], 6, y + 8);
+    } else {
+      ctx.letterSpacing = "1.5px"; ctx.fillText(names[k], 6, y); ctx.letterSpacing = "0px";
+    }
   }
   ctx.textBaseline = "alphabetic";
   // time axis: a tick a minute normally, coarser when the blocks are old
@@ -1537,7 +1904,7 @@ function drawTape(now) {
       if (t.b.order > k || t.x < gutter) continue;
       if (prev) {
         ctx.beginPath();
-        if (angel || k === 2) { ctx.moveTo(prev, laneY[k]); ctx.lineTo(t.x, laneY[k]); }
+        if (!glow || k === 2) { ctx.moveTo(prev, laneY[k]); ctx.lineTo(t.x, laneY[k]); }
         else { const mid = (prev + t.x) / 2; ctx.moveTo(prev, laneY[k]); ctx.quadraticCurveTo(mid, laneY[k] - 9, t.x, laneY[k]); }
         ctx.stroke();
       }
@@ -1556,7 +1923,7 @@ function drawTape(now) {
       ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, laneY[2]); ctx.stroke();
     }
     // zone node: size by gas used, workshare ticks beneath
-    const gas = b.gas_used / Math.max(1, b.gas_limit), r = 2.5 + Math.min(1, gas * 3) * 4;
+    const gas = b.gas_used / Math.max(1, b.gas_limit), r = quai ? 2 + Math.min(1, gas * 3) * 3 : 2.5 + Math.min(1, gas * 3) * 4;
     ctx.fillStyle = hexA(col[2], hover ? 1 : 0.85);
     if (angel) ctx.fillRect(x - r, laneY[2] - r, r * 2, r * 2); else { ctx.beginPath(); ctx.arc(x, laneY[2], r, 0, 7); ctx.fill(); }
     ctx.fillStyle = hexA(col[2], 0.6);
@@ -1565,7 +1932,7 @@ function drawTape(now) {
     if (b.ours || b.ours_block) {
       const ok = css("--ok");
       ctx.strokeStyle = ok; ctx.lineWidth = 1.5;
-      if (!angel) { ctx.shadowColor = ok; ctx.shadowBlur = 10; }
+      if (glow) { ctx.shadowColor = ok; ctx.shadowBlur = 10; }
       if (angel) ctx.strokeRect(x - r - 3, laneY[2] - r - 3, (r + 3) * 2, (r + 3) * 2); else { ctx.beginPath(); ctx.arc(x, laneY[2], r + 3.5, 0, 7); ctx.stroke(); }
       ctx.shadowBlur = 0;
       if (b.ours_block) { ctx.fillStyle = ok; ctx.font = `12px ${css("--mono")}`; ctx.fillText("★", x - 5, laneY[2] - r - 6); }
@@ -1574,6 +1941,13 @@ function drawTape(now) {
     for (let k = b.order; k < 2; k++) {
       const y = laneY[k], R = k === 0 ? 6.5 : 5;
       ctx.fillStyle = col[k];
+      if (quai) {
+        // prime: a red dot in a ring (the logo's shape); region: a peach dot
+        ctx.beginPath(); ctx.arc(x, y, k === 0 ? 3.6 : 4.4, 0, 7); ctx.fill();
+        if (k === 0) { ctx.strokeStyle = col[0]; ctx.lineWidth = hover ? 2.4 : 1.8; ctx.beginPath(); ctx.arc(x, y, 7.5, 0, 7); ctx.stroke(); }
+        else if (hover) { ctx.strokeStyle = col[1]; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.stroke(); }
+        continue;
+      }
       if (!angel) { ctx.shadowColor = col[k]; ctx.shadowBlur = hover ? 16 : 8; }
       ctx.beginPath(); ctx.moveTo(x, y - R); ctx.lineTo(x + R, y); ctx.lineTo(x, y + R); ctx.lineTo(x - R, y); ctx.closePath(); ctx.fill();
       ctx.shadowBlur = 0;
@@ -1590,14 +1964,14 @@ function drawTape(now) {
       if (lastX - x < 78) continue;
       lastX = x;
       ctx.fillStyle = hexA(col[k], 0.9);
-      ctx.fillText(fmtInt(k === 0 ? b.prime_number : b.region_number), x - 26, laneY[k] - 11);
+      ctx.fillText(fmtInt(k === 0 ? b.prime_number : b.region_number), x - 26, laneY[k] - (quai ? 13 : 11));
     }
   }
   // the newest block rises through its tiers
   if (newest && fresh > 0 && newest.x >= gutter) {
     const k = Math.min(2, newest.b.order), u = 1 - fresh, yTop = laneY[2] - (laneY[2] - laneY[k]) * Math.min(1, u * 1.6);
     const c = col[k];
-    ctx.strokeStyle = hexA(c, fresh); ctx.lineWidth = 3; if (!angel) { ctx.shadowColor = c; ctx.shadowBlur = 18; }
+    ctx.strokeStyle = hexA(c, fresh); ctx.lineWidth = 3; if (glow) { ctx.shadowColor = c; ctx.shadowBlur = 18; }
     ctx.beginPath(); ctx.moveTo(newest.x, laneY[2] + 8); ctx.lineTo(newest.x, yTop); ctx.stroke(); ctx.shadowBlur = 0;
     ctx.strokeStyle = hexA(c, fresh * 0.8); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(newest.x, yTop, 6 + u * 18, 0, 7); ctx.stroke();
@@ -1643,7 +2017,7 @@ setLook(look);
 if (!reduceMotion) {
   const b = document.createElement("div");
   b.className = "boot";
-  b.textContent = "> DIVE // linking node RPC · chain heads · workshares · peers · log";
+  b.textContent = L.boot;
   document.body.appendChild(b);
   setTimeout(() => b.remove(), 3500);
 }

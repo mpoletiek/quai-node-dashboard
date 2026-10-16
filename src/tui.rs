@@ -1,6 +1,7 @@
 //! The terminal dashboard: ratatui over crossterm, ~12 frames a second,
-//! two looks (GHOST: a cyan cyberbrain HUD; ANGEL: an orange command-center
-//! alarm board), toggled with `t`.
+//! three looks (QUAI: Quai Network's own red, the default; GHOST: a cyan
+//! cyberbrain HUD; ANGEL: an orange command-center alarm board), switched
+//! with `t`.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,11 @@ const BOOT_TICKS: u64 = 18;
 const FLASH_TICKS: u64 = 16;
 const HIST: usize = 48;
 
+/// Quai Network's brand red (the logo's fill).
+const QUAI_RED: Color = Color::Rgb(226, 1, 1);
+/// qu.ai's warm accent.
+const QUAI_PEACH: Color = Color::Rgb(240, 161, 109);
+
 /// Colours of one theme.
 #[derive(Clone, Copy)]
 struct Pal {
@@ -37,10 +43,35 @@ struct Pal {
     ok: Color,
     purple: Color,
     scan: Color,
+    /// Prime, region and zone.
+    tier: [Color; 3],
+    /// KAWPOW, SHA and SCRYPT.
+    algo: [Color; 3],
 }
 
 fn pal(theme: Theme) -> Pal {
     match theme {
+        // Quai Network's brand red and warm browns (qu.ai). Red is the
+        // brand, so alerts are a lighter red and always carry a word
+        // (OFFLINE, ALERT, OVERDUE) rather than relying on the colour.
+        Theme::Quai => Pal {
+            bg: Color::Rgb(23, 11, 7),
+            fg: QUAI_RED,
+            text: Color::Rgb(246, 232, 220),
+            dim: Color::Rgb(168, 128, 106),
+            faint: Color::Rgb(78, 42, 29),
+            alert: Color::Rgb(255, 86, 86),
+            warn: Color::Rgb(255, 196, 84),
+            ok: Color::Rgb(110, 231, 160),
+            purple: QUAI_PEACH,
+            scan: Color::Rgb(37, 18, 13),
+            tier: [QUAI_RED, QUAI_PEACH, Color::Rgb(246, 232, 220)],
+            algo: [
+                Color::Rgb(255, 72, 56),
+                QUAI_PEACH,
+                Color::Rgb(255, 196, 84),
+            ],
+        },
         Theme::Ghost => Pal {
             bg: Color::Rgb(2, 7, 11),
             fg: Color::Rgb(94, 246, 224),
@@ -52,6 +83,16 @@ fn pal(theme: Theme) -> Pal {
             ok: Color::Rgb(120, 255, 190),
             purple: Color::Rgb(150, 130, 255),
             scan: Color::Rgb(9, 34, 40),
+            tier: [
+                Color::Rgb(255, 61, 127),
+                Color::Rgb(150, 130, 255),
+                Color::Rgb(94, 246, 224),
+            ],
+            algo: [
+                Color::Rgb(94, 246, 224),
+                Color::Rgb(150, 130, 255),
+                Color::Rgb(255, 195, 90),
+            ],
         },
         Theme::Angel => Pal {
             bg: Color::Rgb(6, 2, 3),
@@ -64,6 +105,16 @@ fn pal(theme: Theme) -> Pal {
             ok: Color::Rgb(60, 255, 143),
             purple: Color::Rgb(150, 90, 255),
             scan: Color::Rgb(22, 8, 4),
+            tier: [
+                Color::Rgb(255, 38, 38),
+                Color::Rgb(150, 90, 255),
+                Color::Rgb(255, 122, 26),
+            ],
+            algo: [
+                Color::Rgb(255, 122, 26),
+                Color::Rgb(150, 90, 255),
+                Color::Rgb(255, 178, 26),
+            ],
         },
     }
 }
@@ -100,6 +151,9 @@ struct App {
     flash: Option<Flash>,
     last_event_ms: u64,
     last_zone: u64,
+    /// The zone height before the latest one (QUAI marks the digits that
+    /// changed).
+    prev_zone: u64,
     zone_changed: u64,
     hist: [VecDeque<u64>; 3],
     hist_key: String,
@@ -129,6 +183,7 @@ impl App {
             flash: None,
             last_event_ms: now_ms(),
             last_zone: 0,
+            prev_zone: 0,
             zone_changed: 0,
             hist: [VecDeque::new(), VecDeque::new(), VecDeque::new()],
             hist_key: String::new(),
@@ -144,6 +199,7 @@ impl App {
             if self.last_zone != 0 {
                 self.zone_changed = self.tick;
             }
+            self.prev_zone = self.last_zone;
             self.last_zone = zone;
         }
         for e in s.events.iter().filter(|e| e.t_ms > self.last_event_ms) {
@@ -198,13 +254,7 @@ impl App {
                     return true;
                 }
             }
-            KeyCode::Char('t') => {
-                self.theme = if self.theme == Theme::Ghost {
-                    Theme::Angel
-                } else {
-                    Theme::Ghost
-                };
-            }
+            KeyCode::Char('t') => self.theme = self.theme.next(),
             KeyCode::Char('l') => {
                 self.view = if self.view == View::Logs {
                     View::Dash
@@ -270,7 +320,7 @@ struct PixelMap {
 
 impl PixelMap {
     fn update(&mut self, app: &App, s: &State) {
-        use crate::raster::{MapColors, Pin, flat, globe};
+        use crate::raster::{MapColors, Pin, flat, globe, ring};
         let mut out = std::io::stdout();
         let overlay = app.help
             || app.tick < BOOT_TICKS
@@ -308,6 +358,8 @@ impl PixelMap {
             acc: rgb(p.fg),
             warn: rgb(p.warn),
             hot: rgb(p.alert),
+            land: rgb(p.dim),
+            peer: rgb(p.purple),
         };
         let pins: Vec<Pin> = s
             .peers
@@ -332,6 +384,15 @@ impl PixelMap {
                 t,
             ),
             Theme::Angel => flat(w, h, &colors, &pins, s.peers.here.as_ref(), t),
+            Theme::Quai => ring(
+                w,
+                h,
+                &colors,
+                &pins,
+                s.peers.here.as_ref(),
+                -40.0 + t * 1.2,
+                t,
+            ),
         };
         if crate::term::place_png(
             &mut out,
@@ -728,6 +789,18 @@ fn seg_rows(s: &str) -> [String; 5] {
 fn panel(f: &mut Frame, area: Rect, app: &App, title: &str, jp: &str) -> Rect {
     let p = pal(app.theme);
     let block = match app.theme {
+        // Rounded and quiet: a red dot (the logo's colour) leads the title.
+        Theme::Quai => Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(p.faint))
+            .title(Line::from(vec![
+                Span::styled(" ● ", Style::new().fg(p.fg)),
+                Span::styled(
+                    format!("{title} "),
+                    Style::new().fg(p.text).add_modifier(Modifier::BOLD),
+                ),
+            ])),
         Theme::Ghost => Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Plain)
@@ -806,7 +879,10 @@ fn draw(f: &mut Frame, app: &App, s: &State) {
         draw_boot(f, app, s, area);
         return;
     }
-    let header_h = if app.theme == Theme::Angel { 3 } else { 2 };
+    let header_h = match app.theme {
+        Theme::Quai | Theme::Ghost => 2,
+        Theme::Angel => 3,
+    };
     let [head, body] =
         Layout::vertical([Constraint::Length(header_h), Constraint::Min(0)]).areas(area);
     draw_header(f, app, s, head);
@@ -1031,13 +1107,21 @@ fn draw_header(f: &mut Frame, app: &App, s: &State, area: Rect) {
     };
     let chain = s.node.chain_id.map_or("—".to_string(), |c| c.to_string());
     let (brand, theme_name) = match app.theme {
+        Theme::Quai => ("◉ QUAI NETWORK", "QUAI"),
         Theme::Ghost => ("QUAI//DIVE", "GHOST"),
         Theme::Angel => ("QUAI TERMINAL", "ANGEL"),
     };
     let info = Line::from(vec![
         Span::styled(
             format!(" {brand} "),
-            Style::new().fg(p.bg).bg(p.fg).add_modifier(Modifier::BOLD),
+            Style::new()
+                .fg(match app.theme {
+                    // White on Quai red, as on qu.ai.
+                    Theme::Quai => Color::White,
+                    Theme::Ghost | Theme::Angel => p.bg,
+                })
+                .bg(p.fg)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
         Span::styled(
@@ -1069,6 +1153,25 @@ fn draw_header(f: &mut Frame, app: &App, s: &State, area: Rect) {
         ),
     ]);
     match app.theme {
+        Theme::Quai => {
+            // The rule is a fuse: it burns red from the left as the zone
+            // waits for its next block, full at twice the average block
+            // time, and starts again with each block. A syncing node's
+            // blocks are history: no fuse.
+            let (since, avg) = since_block(s);
+            let w = area.width as usize;
+            let lit = if avg > 0.0 && !s.sync.syncing {
+                ((since / (avg * 2.0)).min(1.0) * w as f64) as usize
+            } else {
+                0
+            };
+            let c = if overdue(since, avg) { p.alert } else { p.fg };
+            let rule = Line::from(vec![
+                Span::styled("━".repeat(lit), Style::new().fg(c)),
+                Span::styled("─".repeat(w - lit), Style::new().fg(p.faint)),
+            ]);
+            f.render_widget(Paragraph::new(vec![info, rule]), area);
+        }
         Theme::Ghost => {
             let rule: String = (0..area.width)
                 .map(|i| {
@@ -1105,6 +1208,7 @@ fn draw_hero(f: &mut Frame, app: &App, s: &State, area: Rect) {
         let err = s.node.error.clone().unwrap_or_else(|| "connecting…".into());
         let blink = (app.tick / 6) % 2 == 0;
         let title = match app.theme {
+            Theme::Quai => "CONNECTION LOST",
             Theme::Ghost => "LINK LOST // 接続断",
             Theme::Angel => "SIGNAL LOST — 信号途絶",
         };
@@ -1128,18 +1232,33 @@ fn draw_hero(f: &mut Frame, app: &App, s: &State, area: Rect) {
         );
         return;
     }
-    let zone = s.chains.zone.as_ref();
-    let number = zone.map_or(0, |z| z.number);
-    let since = zone.map_or(0.0, |z| {
-        (now_ms() as f64 / 1000.0 - z.timestamp as f64).max(0.0)
-    });
+    let number = s.chains.zone.as_ref().map_or(0, |z| z.number);
+    let (since, avg) = since_block(s);
     let [left, right] =
         Layout::horizontal([Constraint::Min(30), Constraint::Length(24)]).areas(area);
     // Big height, scrambled for a moment after it changes (GHOST).
     let rows = big_rows(&group_digits(number));
-    let fresh = app.tick.saturating_sub(app.zone_changed) < 4 && app.zone_changed > 0;
+    let age = app.tick.saturating_sub(app.zone_changed);
+    let fresh = age < 4 && app.zone_changed > 0;
     let mut lines: Vec<Line> = Vec::new();
-    for (r, row) in rows.iter().enumerate() {
+    if app.theme == Theme::Quai {
+        // The digits that changed glow peach for a second.
+        let changed = if app.zone_changed > 0 && age < 12 && app.prev_zone > 0 {
+            changed_chars(&group_digits(number), &group_digits(app.prev_zone))
+        } else {
+            Vec::new()
+        };
+        for row in &rows {
+            lines.push(Line::from(big_spans(
+                row,
+                &group_digits(number),
+                &changed,
+                Style::new().fg(p.fg).add_modifier(Modifier::BOLD),
+                Style::new().fg(p.purple).add_modifier(Modifier::BOLD),
+            )));
+        }
+    }
+    for (r, row) in rows.iter().enumerate().filter(|_| app.theme != Theme::Quai) {
         let style = Style::new()
             .fg(if fresh && app.theme == Theme::Angel {
                 p.warn
@@ -1166,7 +1285,6 @@ fn draw_hero(f: &mut Frame, app: &App, s: &State, area: Rect) {
             lines.push(Line::styled(row.clone(), style));
         }
     }
-    let avg = s.mining.as_ref().map_or(0.0, |m| m.avg_block_time);
     let last = s.blocks.back();
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
@@ -1189,23 +1307,28 @@ fn draw_hero(f: &mut Frame, app: &App, s: &State, area: Rect) {
         ),
     ]));
     f.render_widget(Paragraph::new(lines), left);
+    if app.theme == Theme::Quai {
+        draw_q_timer(f, &p, since, avg, right);
+        return;
+    }
     // Seven-segment timer: seconds since the last block.
-    let late = avg > 0.0 && since > avg * 3.0;
+    let late = overdue(since, avg);
     let timer = if since >= 100.0 {
         format!("{:03}", since as u64)
     } else {
         format!("{since:04.1}")
     };
     let label = match app.theme {
-        Theme::Ghost => "SINCE LAST BLOCK",
+        Theme::Quai | Theme::Ghost => "SINCE LAST BLOCK",
         Theme::Angel => "活動限界 BLOCK TIMER",
     };
     let color = if late {
         p.alert
-    } else if app.theme == Theme::Angel {
-        p.warn
     } else {
-        p.fg
+        match app.theme {
+            Theme::Angel => p.warn,
+            Theme::Quai | Theme::Ghost => p.fg,
+        }
     };
     let mut tl = vec![Line::styled(label, Style::new().fg(p.dim))];
     for row in seg_rows(&timer) {
@@ -1231,14 +1354,164 @@ fn draw_hero(f: &mut Frame, app: &App, s: &State, area: Rect) {
     f.render_widget(Paragraph::new(tl), right);
 }
 
+/// Seconds since the zone's last block, and the average block time.
+fn since_block(s: &State) -> (f64, f64) {
+    let since = s.chains.zone.as_ref().map_or(0.0, |z| {
+        (now_ms() as f64 / 1000.0 - z.timestamp as f64).max(0.0)
+    });
+    (since, s.mining.as_ref().map_or(0.0, |m| m.avg_block_time))
+}
+
+/// Three average block times without a block.
+fn overdue(since: f64, avg: f64) -> bool {
+    avg > 0.0 && since > avg * 3.0
+}
+
+/// Which characters of `now` differ from `before`, both right-aligned
+/// (digits keep their place value).
+fn changed_chars(now: &str, before: &str) -> Vec<bool> {
+    let (a, b): (Vec<char>, Vec<char>) = (now.chars().collect(), before.chars().collect());
+    a.iter()
+        .enumerate()
+        .map(|(i, c)| (i + b.len()).checked_sub(a.len()).and_then(|j| b.get(j)) != Some(c))
+        .collect()
+}
+
+/// One row of `big_rows(text)` as spans, the characters marked in
+/// `changed` in `hi`.
+fn big_spans(
+    row: &str,
+    text: &str,
+    changed: &[bool],
+    base: Style,
+    hi: Style,
+) -> Vec<Span<'static>> {
+    let cells: Vec<char> = row.chars().collect();
+    let mut spans = Vec::new();
+    let mut at = 0;
+    for (i, c) in text.chars().enumerate() {
+        // A digit is three cells and a gap; a separator, one and a gap.
+        let w = if c.is_ascii_digit() { 4 } else { 2 };
+        let end = (at + w).min(cells.len());
+        let chunk: String = cells[at.min(end)..end].iter().collect();
+        let style = if changed.get(i) == Some(&true) {
+            hi
+        } else {
+            base
+        };
+        spans.push(Span::styled(chunk, style));
+        at = end;
+    }
+    spans
+}
+
+/// QUAI's block timer: the Quai logo's ring, its notch and tail at the
+/// lower right, filling red clockwise from the top over two average block
+/// times; the seconds in the middle.
+fn draw_q_timer(f: &mut Frame, p: &Pal, since: f64, avg: f64, area: Rect) {
+    if area.width < 12 || area.height < 4 {
+        return;
+    }
+    let late = overdue(since, avg);
+    let [label, ring] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+    f.render_widget(
+        Paragraph::new(if late {
+            Line::styled(
+                "▲ OVERDUE",
+                Style::new().fg(p.alert).add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Line::styled("SINCE LAST BLOCK", Style::new().fg(p.dim))
+        })
+        .alignment(Alignment::Center),
+        label,
+    );
+    // Braille dots are about square at 2 × 4 per cell.
+    let (w, h) = (f64::from(ring.width) * 2.0, f64::from(ring.height) * 4.0);
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    let r = (h / 2.0 - 1.0).min(w / 2.0 - 1.0).max(3.0);
+    let frac = if avg > 0.0 {
+        (since / (avg * 2.0)).min(1.0)
+    } else {
+        0.0
+    };
+    let on = if late { p.alert } else { p.fg };
+    let track = p.dim;
+    // The notch: where the tail leaves the ring (about half past four).
+    let notch = -50f64.to_radians();
+    let text = if since >= 100.0 {
+        format!("{since:.0}s")
+    } else {
+        format!("{since:.1}s")
+    };
+    let canvas = Canvas::default()
+        .marker(Marker::Braille)
+        .x_bounds([0.0, w])
+        .y_bounds([0.0, h])
+        .background_color(p.bg)
+        .paint(move |ctx| {
+            let mut lit = Vec::new();
+            let mut unlit = Vec::new();
+            // Three dots thick, a dot apart.
+            for band in [r - 2.0, r - 1.0, r] {
+                let steps = (band * 8.0) as usize;
+                for k in 0..steps {
+                    // Clockwise from twelve o'clock.
+                    let u = k as f64 / steps as f64;
+                    let a = std::f64::consts::FRAC_PI_2 - u * std::f64::consts::TAU;
+                    let off = (a - notch).rem_euclid(std::f64::consts::TAU);
+                    if !(0.25..std::f64::consts::TAU - 0.25).contains(&off) {
+                        continue;
+                    }
+                    let pt = (cx + a.cos() * band, cy + a.sin() * band);
+                    if u <= frac {
+                        lit.push(pt);
+                    } else {
+                        unlit.push(pt);
+                    }
+                }
+            }
+            ctx.draw(&Points {
+                coords: &unlit,
+                color: track,
+            });
+            ctx.draw(&Points {
+                coords: &lit,
+                color: on,
+            });
+            // The tail, out through the notch, three dots wide.
+            let (c, s) = (notch.cos(), notch.sin());
+            for k in [-1.0, 0.0, 1.0] {
+                let (ox, oy) = (-s * k * 0.8, c * k * 0.8);
+                ctx.draw(&CLine {
+                    x1: cx + c * (r * 0.55) + ox,
+                    y1: cy + s * (r * 0.55) + oy,
+                    x2: cx + c * (r + 2.0) + ox,
+                    y2: cy + s * (r + 2.0) + oy,
+                    color: if frac > 0.98 { on } else { track },
+                });
+            }
+            ctx.layer();
+            ctx.print(
+                cx - text.chars().count() as f64,
+                cy + 1.0,
+                Span::styled(
+                    text.clone(),
+                    Style::new().fg(on).add_modifier(Modifier::BOLD),
+                ),
+            );
+        });
+    f.render_widget(canvas, ring);
+}
+
 fn draw_chains(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
     let now = now_ms() as i64 / 1000;
     let mut lines = Vec::new();
     for (name, head, c) in [
-        ("PRIME", &s.chains.prime, p.alert),
-        ("REGION", &s.chains.region, p.purple),
-        ("ZONE", &s.chains.zone, p.fg),
+        ("PRIME", &s.chains.prime, p.tier[0]),
+        ("REGION", &s.chains.region, p.tier[1]),
+        ("ZONE", &s.chains.zone, p.tier[2]),
     ] {
         let (num, ago) = match head {
             Some(h) => (thousands(h.number), age(secs_since(now, h.timestamp))),
@@ -1248,7 +1521,15 @@ fn draw_chains(f: &mut Frame, app: &App, s: &State, area: Rect) {
             .as_ref()
             .is_some_and(|h| secs_since(now, h.timestamp) < 2);
         lines.push(Line::from(vec![
-            Span::styled(if pulse { "◆ " } else { "◇ " }, Style::new().fg(c)),
+            Span::styled(
+                match (app.theme, pulse) {
+                    (Theme::Quai, true) => "● ",
+                    (Theme::Quai, false) => "○ ",
+                    (_, true) => "◆ ",
+                    (_, false) => "◇ ",
+                },
+                Style::new().fg(c),
+            ),
             Span::styled(
                 format!("{name:<7}"),
                 Style::new().fg(c).add_modifier(Modifier::BOLD),
@@ -1266,13 +1547,13 @@ fn draw_chains(f: &mut Frame, app: &App, s: &State, area: Rect) {
                 0.0
             };
             let ok = c.compared > 0 && c.matched == c.compared;
-            let label = if app.theme == Theme::Angel {
-                "シンクロ率"
-            } else {
-                "同期率"
+            let label = match app.theme {
+                Theme::Quai => "AGREEMENT ",
+                Theme::Ghost => "同期率 SYNC ",
+                Theme::Angel => "シンクロ率 SYNC ",
             };
             lines.push(Line::from(vec![
-                Span::styled(format!("{label} SYNC "), Style::new().fg(p.dim)),
+                Span::styled(label, Style::new().fg(p.dim)),
                 Span::styled(
                     format!("{rate:5.1}%"),
                     Style::new()
@@ -1411,6 +1692,44 @@ fn algo_rows(s: &State) -> [(&'static str, &'static str, Algo, u32); 3] {
 fn draw_algos(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
     match app.theme {
+        Theme::Quai => {
+            // A table of the three algorithms over one chart of their
+            // hashrates, each scaled to its own range.
+            let inner = panel(f, area, app, "PROOF OF WORK", "");
+            let [table, chart] =
+                Layout::vertical([Constraint::Length(4), Constraint::Min(0)]).areas(inner);
+            let mut lines = vec![Line::styled(
+                format!(
+                    "  {:<8}{:>12}{:>9}{:>9}",
+                    "ALGO", "HASHRATE", "SHARE", "PENDING"
+                ),
+                Style::new().fg(p.dim),
+            )];
+            for (i, (name, _, a, pend)) in algo_rows(s).into_iter().enumerate() {
+                let c = p.algo[i];
+                let idle = a.hashrate <= 0.0;
+                lines.push(Line::from(vec![
+                    Span::styled("▍ ", Style::new().fg(c)),
+                    Span::styled(
+                        format!("{name:<8}"),
+                        Style::new()
+                            .fg(if idle { p.dim } else { c })
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("{:>12}", si_rate(a.hashrate)),
+                        Style::new().fg(if idle { p.dim } else { p.text }),
+                    ),
+                    Span::styled(format!("{:>8.2}s", a.share_time), Style::new().fg(p.text)),
+                    Span::styled(
+                        format!("{pend:>9}"),
+                        Style::new().fg(if pend > 0 { c } else { p.faint }),
+                    ),
+                ]));
+            }
+            f.render_widget(Paragraph::new(lines), table);
+            trend_chart(f, &p, &app.hist, chart);
+        }
         Theme::Ghost => {
             let inner = panel(f, area, app, "MERGED MINING", "演算");
             let rows = Layout::vertical([
@@ -1424,7 +1743,7 @@ fn draw_algos(f: &mut Frame, app: &App, s: &State, area: Rect) {
                 let Some(&row) = rows.get(i) else { continue };
                 let [label, spark] =
                     Layout::horizontal([Constraint::Length(30), Constraint::Min(4)]).areas(row);
-                let c = [p.fg, p.purple, p.warn][i];
+                let c = p.algo[i];
                 let text = vec![
                     Line::from(vec![
                         Span::styled(
@@ -1513,6 +1832,89 @@ fn draw_algos(f: &mut Frame, app: &App, s: &State, area: Rect) {
     }
 }
 
+/// QUAI: the three hashrate histories as lines in one braille chart, each
+/// scaled to its own range (the units differ by orders of magnitude), on
+/// a faint baseline.
+fn trend_chart(f: &mut Frame, p: &Pal, hist: &[VecDeque<u64>; 3], area: Rect) {
+    if area.height < 2 || area.width < 8 {
+        return;
+    }
+    if hist.iter().all(|h| h.len() < 2) {
+        f.render_widget(
+            Paragraph::new(Line::styled(
+                "collecting hashrate samples…",
+                Style::new().fg(p.dim),
+            ))
+            .alignment(Alignment::Center),
+            Rect {
+                y: area.y + area.height / 2,
+                height: 1,
+                ..area
+            },
+        );
+        return;
+    }
+    let series: Vec<(Vec<(f64, f64)>, Color)> = hist
+        .iter()
+        .zip(p.algo)
+        .map(|(h, c)| {
+            let (lo, hi) = (
+                h.iter().copied().min().unwrap_or(0),
+                h.iter().copied().max().unwrap_or(0),
+            );
+            let n = h.len();
+            let pts = h
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| {
+                    // Across the chart, the newest sample at the right edge.
+                    let x = i as f64 * (HIST - 1) as f64 / (n.max(2) - 1) as f64;
+                    let y = if hi > lo {
+                        0.1 + 0.8 * (v - lo) as f64 / (hi - lo) as f64
+                    } else {
+                        0.5
+                    };
+                    (x, y)
+                })
+                .collect();
+            (pts, c)
+        })
+        .collect();
+    let base = p.faint;
+    let canvas = Canvas::default()
+        .marker(Marker::Braille)
+        .x_bounds([0.0, (HIST - 1) as f64])
+        .y_bounds([0.0, 1.0])
+        .background_color(p.bg)
+        .paint(move |ctx| {
+            ctx.draw(&CLine {
+                x1: 0.0,
+                y1: 0.0,
+                x2: (HIST - 1) as f64,
+                y2: 0.0,
+                color: base,
+            });
+            for (pts, c) in &series {
+                for w in pts.windows(2) {
+                    ctx.draw(&CLine {
+                        x1: w[0].0,
+                        y1: w[0].1,
+                        x2: w[1].0,
+                        y2: w[1].1,
+                        color: *c,
+                    });
+                }
+                if let [only] = pts.as_slice() {
+                    ctx.draw(&Points {
+                        coords: &[*only],
+                        color: *c,
+                    });
+                }
+            }
+        });
+    f.render_widget(canvas, area);
+}
+
 /// A sparkline of `hist` drawn against the right edge of `area` (newest
 /// sample rightmost), scaled to its own range.
 fn spark_right(f: &mut Frame, hist: &VecDeque<u64>, color: Color, area: Rect) {
@@ -1586,19 +1988,36 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
             }
         }
     }
-    let peers: Vec<(f64, f64)> = s
-        .peers
-        .list
-        .iter()
-        .filter_map(|x| x.place.as_ref())
-        .map(|pl| (pl.lon, pl.lat))
-        .collect();
+    let located = |out: Option<bool>| -> Vec<(f64, f64)> {
+        s.peers
+            .list
+            .iter()
+            .filter(|x| out.is_none_or(|o| (x.dir == "out") == o))
+            .filter_map(|x| x.place.as_ref())
+            .map(|pl| (pl.lon, pl.lat))
+            .collect()
+    };
+    let peers = located(None);
     let here = s.peers.here.clone();
     let pulse = (app.tick / 4) % 2 == 0;
     let land_c = p.faint;
-    let peer_c = if pulse { p.fg } else { p.text };
     let arc_c = p.dim;
-    let alert = p.alert;
+    // QUAI: inbound peach, outbound gold, this node in Quai red. The
+    // others: every peer pulsing in the accent, this node in the alert
+    // colour.
+    let (groups, here_sym) = match app.theme {
+        Theme::Quai => (
+            vec![
+                (located(Some(false)), p.purple),
+                (located(Some(true)), p.warn),
+            ],
+            Span::styled("◉", Style::new().fg(p.fg).add_modifier(Modifier::BOLD)),
+        ),
+        Theme::Ghost | Theme::Angel => (
+            vec![(peers.clone(), if pulse { p.fg } else { p.text })],
+            Span::styled("◎", Style::new().fg(p.alert)),
+        ),
+    };
     let canvas = Canvas::default()
         .marker(Marker::Braille)
         .x_bounds([-180.0, 180.0])
@@ -1622,12 +2041,14 @@ fn draw_map(f: &mut Frame, app: &App, s: &State, area: Rect) {
                 }
             }
             ctx.layer();
-            ctx.draw(&Points {
-                coords: &peers,
-                color: peer_c,
-            });
+            for (coords, color) in &groups {
+                ctx.draw(&Points {
+                    coords,
+                    color: *color,
+                });
+            }
             if let Some(h) = &here {
-                ctx.print(h.lon, h.lat, Span::styled("◎", Style::new().fg(alert)));
+                ctx.print(h.lon, h.lat, here_sym.clone());
             }
         });
     f.render_widget(canvas, area);
@@ -1666,9 +2087,8 @@ fn draw_tape(f: &mut Frame, app: &App, s: &State, area: Rect) {
     if area.height < 5 || area.width < GUTTER + 6 {
         return;
     }
-    let tier = [p.alert, p.purple, p.fg];
+    let tier = p.tier;
     let lane = |k: usize| area.y + (k as u16) * 2;
-    let ghost = app.theme == Theme::Ghost;
     let buf = f.buffer_mut();
     for (k, name) in ["PRIME", "REGION", "ZONE"].iter().enumerate() {
         buf.set_string(
@@ -1723,18 +2143,18 @@ fn draw_tape(f: &mut Frame, app: &App, s: &State, area: Rect) {
             }
         }
         for k in top..3 {
-            let sym = match (k, ghost) {
-                (0, true) => "◈",
-                (0, false) => "▣",
-                (1, _) => "◆",
-                (_, true) => "●",
-                _ => "■",
+            // Prime, region and zone nodes, and a zone block carrying our
+            // workshares.
+            let [prime, region, zone, ours_ws] = match app.theme {
+                Theme::Quai => ["◎", "●", "•", "◆"],
+                Theme::Ghost => ["◈", "◆", "●", "◉"],
+                Theme::Angel => ["▣", "◆", "■", "▩"],
             };
+            let sym = [prime, region, zone][k];
             let ours = k == 2 && (b.ours > 0 || b.ours_block);
-            let sym = match (ours, b.ours_block, ghost) {
-                (true, true, _) => "★",
-                (true, false, true) => "◉",
-                (true, false, false) => "▩",
+            let sym = match (ours, b.ours_block) {
+                (true, true) => "★",
+                (true, false) => ours_ws,
                 _ => sym,
             };
             let color = if newest && fresh {
@@ -1784,8 +2204,8 @@ fn draw_events(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let mut lines = Vec::new();
     for e in s.events.iter().rev().take(area.height as usize) {
         let (tag, c) = match e.kind.as_str() {
-            "prime" => ("PRIME ", p.alert),
-            "region" => ("REGION", p.purple),
+            "prime" => ("PRIME ", p.tier[0]),
+            "region" => ("REGION", p.tier[1]),
             "reorg" => ("REORG ", p.warn),
             "stall" | "offline" | "mismatch" => ("ALERT ", p.alert),
             "resume" | "online" => ("OK    ", p.ok),
@@ -1881,7 +2301,7 @@ fn stratum_overview<'a>(p: &Pal, st: &crate::state::Stratum) -> Vec<Line<'a>> {
         ("SHA", 1, &st.sha),
         ("SCRYPT", 2, &st.scrypt),
     ] {
-        let c = [p.fg, p.purple, p.warn][i];
+        let c = p.algo[i];
         let idle = a.workers == 0;
         lines.push(Line::from(vec![
             Span::styled(
@@ -1946,12 +2366,12 @@ fn stratum_overview<'a>(p: &Pal, st: &crate::state::Stratum) -> Vec<Line<'a>> {
         };
         lines.push(Line::from(vec![
             Span::styled("MINED   ", Style::new().fg(p.dim)),
-            Span::styled("P ", Style::new().fg(p.alert)),
-            n(m.prime, p.alert),
-            Span::styled(" · R ", Style::new().fg(p.purple)),
-            n(m.region, p.purple),
-            Span::styled(" · Z ", Style::new().fg(p.fg)),
-            n(m.zone, p.fg),
+            Span::styled("P ", Style::new().fg(p.tier[0])),
+            n(m.prime, p.tier[0]),
+            Span::styled(" · R ", Style::new().fg(p.tier[1])),
+            n(m.region, p.tier[1]),
+            Span::styled(" · Z ", Style::new().fg(p.tier[2])),
+            n(m.zone, p.tier[2]),
             Span::styled(" blk · ", Style::new().fg(p.dim)),
             Span::styled(thousands(m.workshares), Style::new().fg(p.text)),
             Span::styled(" ws kept, ", Style::new().fg(p.dim)),
@@ -1995,7 +2415,7 @@ fn stratum_overview<'a>(p: &Pal, st: &crate::state::Stratum) -> Vec<Line<'a>> {
 
 fn worker_line<'a>(p: &Pal, w: &crate::state::StratumWorker, now: u64, wide: bool) -> Line<'a> {
     let (algo, i) = algo_label(&w.algorithm);
-    let c = [p.fg, p.purple, p.warn][i];
+    let c = p.algo[i];
     let last = if w.last_share_ms == 0 {
         "—".to_string()
     } else {
@@ -2219,10 +2639,7 @@ fn draw_mining(f: &mut Frame, app: &App, s: &State, area: Rect) {
                 Style::new().fg(c).add_modifier(Modifier::BOLD),
             ),
             Span::styled(format!("{} ", thousands(x.height)), Style::new().fg(p.text)),
-            Span::styled(
-                format!("{algo:<7}"),
-                Style::new().fg([p.fg, p.purple, p.warn][i]),
-            ),
+            Span::styled(format!("{algo:<7}"), Style::new().fg(p.algo[i])),
             Span::styled(
                 crate::collect::short_worker(&x.worker),
                 Style::new().fg(p.dim),
@@ -2278,6 +2695,55 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
     let p = pal(app.theme);
     let left = fl.until.saturating_sub(app.tick);
     match app.theme {
+        Theme::Quai => {
+            // A card: a header in the tier's colour, the event, and a line
+            // that runs out with the moment.
+            let (title, hue) = match fl.kind {
+                Moment::Prime => ("PRIME BLOCK", p.tier[0]),
+                Moment::Region => ("REGION BLOCK", p.tier[1]),
+                Moment::Mined => ("BLOCK MINED", p.ok),
+            };
+            let head = format!(" ◉ QUAI · {title} ");
+            let cols = |t: &str| u16::try_from(t.chars().count()).unwrap_or(u16::MAX);
+            let w = cols(&head)
+                .saturating_add(8)
+                .max(cols(&fl.text).saturating_add(6))
+                .max(36)
+                .min(area.width);
+            let h = 7.min(area.height);
+            let r = Rect {
+                x: area.x + (area.width - w) / 2,
+                y: area.y + (area.height - h) / 2,
+                width: w,
+                height: h,
+            };
+            f.render_widget(Clear, r);
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(hue))
+                .style(Style::new().bg(p.bg));
+            let inner = block.inner(r);
+            f.render_widget(block, r);
+            let total = FLASH_TICKS + if fl.kind == Moment::Mined { 8 } else { 0 };
+            let run = (u64::from(inner.width) * left / total.max(1)) as usize;
+            let on_hue = if fl.kind == Moment::Prime {
+                Color::White
+            } else {
+                p.bg
+            };
+            let text = vec![
+                Line::styled(
+                    format!("{head:^width$}", width = inner.width as usize),
+                    Style::new().fg(on_hue).bg(hue).add_modifier(Modifier::BOLD),
+                ),
+                Line::raw(""),
+                Line::styled(fl.text.clone(), Style::new().fg(p.text)),
+                Line::raw(""),
+                Line::styled("━".repeat(run), Style::new().fg(hue)),
+            ];
+            f.render_widget(Paragraph::new(text).alignment(Alignment::Center), inner);
+        }
         Theme::Ghost => {
             let title = match fl.kind {
                 Moment::Prime => "PRIME CONVERGENCE // 主鎖収束",
@@ -2379,7 +2845,7 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, r);
     let inner = panel(f, r, app, "CONTROLS", "操作");
     let lines = vec![
-        kv(&p, "t", "toggle GHOST / ANGEL".into(), p.text),
+        kv(&p, "t", "look: QUAI → GHOST → ANGEL".into(), p.text),
         kv(&p, "m", "full-screen peer map".into(), p.text),
         kv(&p, "l", "full-height node log".into(), p.text),
         kv(&p, "s", "stratum: miners on this node".into(), p.text),
@@ -2394,6 +2860,14 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
 fn draw_boot(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let p = pal(app.theme);
     let steps: [&str; 6] = match app.theme {
+        Theme::Quai => [
+            "◉ QUAI NETWORK",
+            "connect     json-rpc",
+            "follow      prime · region · zone",
+            "measure     kawpow · sha · scrypt",
+            "locate      peers",
+            "READY",
+        ],
         Theme::Ghost => [
             "電脳接続 // CYBERBRAIN LINK",
             "> handshake  quai json-rpc",
@@ -2415,19 +2889,28 @@ fn draw_boot(f: &mut Frame, app: &App, s: &State, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     for (i, st) in steps.iter().take(shown).enumerate() {
         let last = i + 1 == steps.len();
-        let style = if last {
-            Style::new().fg(p.bg).bg(p.fg).add_modifier(Modifier::BOLD)
-        } else {
-            Style::new().fg(p.fg)
+        let style = match (app.theme, i, last) {
+            (Theme::Quai, _, true) => Style::new()
+                .fg(Color::White)
+                .bg(p.fg)
+                .add_modifier(Modifier::BOLD),
+            (Theme::Quai, 0, _) => Style::new().fg(p.fg).add_modifier(Modifier::BOLD),
+            (Theme::Quai, _, _) => Style::new().fg(p.text),
+            (_, _, true) => Style::new().fg(p.bg).bg(p.fg).add_modifier(Modifier::BOLD),
+            _ => Style::new().fg(p.fg),
         };
         lines.push(Line::styled(format!(" {st} "), style));
     }
     let w = 50.min(area.width) as usize;
     let done = (app.tick as usize * w) / BOOT_TICKS as usize;
+    let (on, off) = match app.theme {
+        Theme::Quai => ("━", "─"),
+        Theme::Ghost | Theme::Angel => ("█", "░"),
+    };
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
-        Span::styled("█".repeat(done.min(w)), Style::new().fg(p.fg)),
-        Span::styled("░".repeat(w.saturating_sub(done)), Style::new().fg(p.faint)),
+        Span::styled(on.repeat(done.min(w)), Style::new().fg(p.fg)),
+        Span::styled(off.repeat(w.saturating_sub(done)), Style::new().fg(p.faint)),
     ]));
     lines.push(Line::styled(
         format!("{}  {}", s.node.label, s.node.rpc),
@@ -2650,7 +3133,7 @@ mod tests {
             eta_s: Some(3 * 3600),
             progress_bp: Some(1_234),
         };
-        for theme in [Theme::Ghost, Theme::Angel] {
+        for theme in [Theme::Quai, Theme::Ghost, Theme::Angel] {
             for (w, h) in [(160, 48), (80, 24)] {
                 let Ok(mut term) = Terminal::new(TestBackend::new(w, h));
                 let mut app = App::new(theme);
@@ -2680,7 +3163,35 @@ mod tests {
     }
 
     #[test]
-    fn renders_both_themes() {
+    fn renders_every_theme() {
+        let q = render(Theme::Quai, 160, 48, View::Dash);
+        for want in [
+            "◉ QUAI NETWORK",
+            "RS-QUAI SOAK",
+            "ZONE HEIGHT",
+            "SINCE LAST BLOCK",
+            "HIERARCHY",
+            "AGREEMENT 100.0%",
+            "PROOF OF WORK",
+            "HASHRATE",
+            "243.69 GH/s",
+            "256.00 PH/s",
+            "PEER MAP",
+            "BLOCK LATTICE",
+            "NODE LOG",
+            "network peers=85",
+        ] {
+            assert!(q.contains(want), "QUAI frame lacks {want:?}\n{q}");
+        }
+        // No Japanese labels and no GHOST or ANGEL pieces.
+        for gone in ["鎖高", "QUAI//DIVE", "MERGED MINING", "承認", "同期率"] {
+            assert!(!q.contains(gone), "QUAI frame has {gone:?}\n{q}");
+        }
+        let small = render(Theme::Quai, 90, 26, View::Dash);
+        assert!(
+            small.contains("ZONE HEIGHT") && small.contains("PROOF OF WORK"),
+            "{small}"
+        );
         let g = render(Theme::Ghost, 160, 48, View::Dash);
         for want in [
             "QUAI//DIVE",
@@ -2728,7 +3239,7 @@ mod tests {
     #[test]
     fn overlays_and_tiny_terminals() {
         let s = sample();
-        for theme in [Theme::Ghost, Theme::Angel] {
+        for theme in [Theme::Quai, Theme::Ghost, Theme::Angel] {
             for (w, h) in [(160, 48), (40, 10), (8, 3), (1, 1)] {
                 let Ok(mut term) = Terminal::new(TestBackend::new(w, h));
                 for tick in [0, 5, BOOT_TICKS + 1] {
@@ -2874,7 +3385,7 @@ mod tests {
     #[test]
     fn renders_the_stratum() {
         let s = with_stratum(sample());
-        for theme in [Theme::Ghost, Theme::Angel] {
+        for theme in [Theme::Quai, Theme::Ghost, Theme::Angel] {
             let d = render_state(&s, theme, 160, 48, View::Dash);
             for want in [
                 "STRATUM",
@@ -2933,7 +3444,7 @@ mod tests {
         assert!(app.flash.as_ref().is_some_and(|f| f.kind == Moment::Mined));
         for (w, h) in [(160, 48), (40, 10), (8, 3)] {
             let Ok(mut term) = Terminal::new(TestBackend::new(w, h));
-            for theme in [Theme::Ghost, Theme::Angel] {
+            for theme in [Theme::Quai, Theme::Ghost, Theme::Angel] {
                 app.theme = theme;
                 app.view = View::Mining;
                 assert!(term.draw(|f| draw(f, &app, &s2)).is_ok());
@@ -2969,7 +3480,7 @@ mod tests {
         s.push_event(now_ms() + 10, "mined", "x".repeat(65_531), Some(1));
         app.observe(&s);
         let Ok(mut term) = Terminal::new(TestBackend::new(160, 48));
-        for theme in [Theme::Ghost, Theme::Angel] {
+        for theme in [Theme::Quai, Theme::Ghost, Theme::Angel] {
             for view in [View::Dash, View::Logs, View::Map, View::Mining] {
                 app.theme = theme;
                 app.view = view;
@@ -3005,6 +3516,69 @@ mod tests {
         assert!(!render_state(&s, Theme::Ghost, 160, 48, View::Dash).contains("STALE"));
         s.now_ms = now_ms() - 30_000;
         assert!(render_state(&s, Theme::Ghost, 160, 48, View::Dash).contains("STALE"));
+    }
+
+    #[test]
+    fn t_cycles_the_looks() {
+        let mut app = App::new(Theme::Quai);
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            assert!(!app.key(KeyCode::Char('t')));
+            seen.push(app.theme);
+        }
+        assert_eq!(seen, [Theme::Ghost, Theme::Angel, Theme::Quai]);
+    }
+
+    #[test]
+    fn quai_marks_changed_digits_and_shows_moments() {
+        assert_eq!(
+            changed_chars("10,390,405", "10,390,399"),
+            [
+                false, false, false, false, false, false, false, true, true, true
+            ]
+        );
+        // A new decade: the new leading digit is new.
+        assert_eq!(
+            changed_chars("1,000", "999"),
+            [true, true, true, true, true]
+        );
+        let row = &big_rows("1,2")[0];
+        let spans = big_spans(
+            row,
+            "1,2",
+            &[false, false, true],
+            Style::new(),
+            Style::new().bold(),
+        );
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[2].content, "███ ");
+        assert!(spans[2].style.add_modifier.contains(Modifier::BOLD));
+        // The moment card names the tier.
+        let s = sample();
+        let mut app = App::new(Theme::Quai);
+        app.tick = BOOT_TICKS + 3;
+        app.observe(&s);
+        for (kind, want) in [
+            (Moment::Prime, "PRIME BLOCK"),
+            (Moment::Region, "REGION BLOCK"),
+            (Moment::Mined, "BLOCK MINED"),
+        ] {
+            app.flash = Some(Flash {
+                until: app.tick + 5,
+                kind,
+                text: "Block 10390405".into(),
+            });
+            let Ok(mut term) = Terminal::new(TestBackend::new(120, 40));
+            assert!(term.draw(|f| draw(f, &app, &s)).is_ok());
+            let text: String = term
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .collect();
+            assert!(text.contains(want), "{want}");
+        }
     }
 
     #[test]

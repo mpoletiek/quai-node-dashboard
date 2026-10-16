@@ -1,5 +1,6 @@
 //! quai-dash: a live monitor for a Quai node (rs-quai or go-quai), in the
-//! browser (`web`) or the terminal (`tui`), with two looks: GHOST and ANGEL.
+//! browser (`web`) or the terminal (`tui`), with three looks: QUAI (the
+//! default), GHOST and ANGEL.
 //!
 //! Everything comes from what every node already offers: the zone, region
 //! and prime JSON-RPC endpoints, the `nodelogs` directory, and (on the
@@ -44,10 +45,32 @@ use crate::state::{Place, State};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Theme {
+    /// Quai Network red: the official look.
+    Quai,
     /// Cyan cyberbrain HUD.
     Ghost,
     /// Orange command-center alarms.
     Angel,
+}
+
+impl Theme {
+    /// The look `t` switches to.
+    pub fn next(self) -> Theme {
+        match self {
+            Theme::Quai => Theme::Ghost,
+            Theme::Ghost => Theme::Angel,
+            Theme::Angel => Theme::Quai,
+        }
+    }
+
+    /// The name on the command line and in the config file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::Quai => "quai",
+            Theme::Ghost => "ghost",
+            Theme::Angel => "angel",
+        }
+    }
 }
 
 /// Image support.
@@ -113,7 +136,7 @@ enum Cmd {
         #[arg(long, default_value_t = 12)]
         fps: u64,
         /// Length in seconds.
-        #[arg(long, default_value_t = 48)]
+        #[arg(long, default_value_t = 56)]
         seconds: u64,
     },
 }
@@ -482,7 +505,7 @@ fn run() -> Result<(), String> {
                 );
             }
             eprintln!("quai-dash: open http://{listen}/");
-            web::serve(&listen, state)
+            web::serve(&listen, state, s.v.theme.unwrap_or(Theme::Quai).name())
         }
         Cmd::Tui => {
             let term = term::detect();
@@ -493,7 +516,7 @@ fn run() -> Result<(), String> {
             };
             tui::run(
                 state,
-                s.v.theme.unwrap_or(Theme::Ghost),
+                s.v.theme.unwrap_or(Theme::Quai),
                 tui::Options {
                     graphics,
                     kind: term,
@@ -513,21 +536,25 @@ fn run() -> Result<(), String> {
                 w.parse().map_err(|_| "bad width")?,
                 h.parse().map_err(|_| "bad height")?,
             );
-            // Let the demo node fill in, then tour both looks and the views.
+            // Let the demo node fill in, then tour the three looks and the
+            // views.
             std::thread::sleep(Duration::from_millis(300));
             let script = [
-                (9.0, 'm', "m  peer map, full screen"),
-                (15.0, 'm', "m  back to the dashboard"),
-                (20.0, 't', "t  switch look: ANGEL"),
-                (24.5, 's', "s  stratum: miners and workers on this node"),
-                (28.5, 's', "s  back to the dashboard"),
-                (31.0, 'l', "l  node log, full height"),
-                (36.0, 'l', "l  back to the dashboard"),
-                (40.0, '?', "?  help"),
-                (43.0, '?', "?  close help"),
-                (44.5, 't', "t  switch look: GHOST"),
+                (8.0, 'm', "m  peer map, full screen"),
+                (13.0, 'm', "m  back to the dashboard"),
+                (16.0, 's', "s  stratum: miners and workers on this node"),
+                (20.0, 's', "s  back to the dashboard"),
+                (22.0, 't', "t  switch look: GHOST"),
+                (28.0, 'm', "m  peer map, full screen"),
+                (32.0, 'm', "m  back to the dashboard"),
+                (34.0, 't', "t  switch look: ANGEL"),
+                (39.0, 'l', "l  node log, full height"),
+                (43.0, 'l', "l  back to the dashboard"),
+                (46.0, '?', "?  help"),
+                (49.0, '?', "?  close help"),
+                (51.0, 't', "t  switch look: QUAI"),
             ];
-            let json = tui::record(&state, Theme::Ghost, dims, fps, seconds, &script)?;
+            let json = tui::record(&state, Theme::Quai, dims, fps, seconds, &script)?;
             std::fs::write(&out, json.to_string())
                 .map_err(|e| format!("{}: {e}", out.display()))?;
             eprintln!("quai-dash: wrote {}", out.display());
