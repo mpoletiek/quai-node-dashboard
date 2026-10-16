@@ -2,10 +2,13 @@
 
 [![CI](https://github.com/mpoletiek/quai-node-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/mpoletiek/quai-node-dashboard/actions/workflows/ci.yml)
 
-`quai-dash`: a live monitor for a Quai node, in the browser or the terminal, with two
-looks: **GHOST** (cyan cyberbrain HUD, rotating dot globe) and **ANGEL**
-(orange command center: seven-segment block timer, a three-panel vote on
-the PoW algorithms, title cards for prime blocks).
+`quai-dash`: a live monitor for a Quai node, in the browser or the terminal, with three
+looks: **QUAI**, the default (Quai Network's red and warm browns, the
+Quai logo, a block timer drawn as the logo's ring, the peer globe framed
+by the logo, one chart of the three proof-of-work hashrates), **GHOST**
+(cyan cyberbrain HUD, rotating dot globe) and **ANGEL** (orange command
+center: seven-segment block timer, a three-panel vote on the PoW
+algorithms, title cards for prime blocks).
 
 It works the same against **rs-quai** and **go-quai**. Everything comes
 from what both nodes already offer: their JSON-RPC, their `nodelogs`
@@ -15,6 +18,10 @@ when the node runs a stratum, its stratum API (for the mining view).
 ## Screenshots
 
 All on demo data (`--demo`): the node, peers and miners are invented.
+
+**Web, QUAI look** (the default)
+
+![Web dashboard, QUAI look: the Quai logo, zone height with the ring-shaped block timer, chain heights, proof-of-work table and trend chart, and the peer globe inside the logo's ring](docs/screenshots/web-quai.png)
 
 **Web, GHOST look**
 
@@ -28,11 +35,15 @@ All on demo data (`--demo`): the node, peers and miners are invented.
 
 ![Web dashboard stratum panel: workers table, shares handed to the node and miners paid on chain](docs/screenshots/web-mining.png)
 
-**Terminal, GHOST look** (`quai-dash tui`)
+**Terminal, QUAI look** (`quai-dash tui`)
+
+![Terminal dashboard, QUAI look: zone height with the ring-shaped block timer, hierarchy, peers, proof-of-work table and trend chart, peer map, block lattice, events, stratum and node log](docs/screenshots/tui-quai.png)
+
+**Terminal, GHOST look** (press `t`)
 
 ![Terminal dashboard, GHOST look: zone height, hierarchy, peers, merged mining, peer map, block lattice, events, stratum and node log](docs/screenshots/tui-ghost.png)
 
-**Terminal, ANGEL look** (press `t`)
+**Terminal, ANGEL look** (press `t` again)
 
 ![Terminal dashboard, ANGEL look: block timer, proof-of-work vote, peer map, block lattice, stratum and node log](docs/screenshots/tui-angel.png)
 
@@ -187,8 +198,8 @@ all three algorithms.
   blocks the last N canonical blocks pay it. The lattice rings those blocks, and
   stars a block found through this node.
 - **Events:** each workshare the stratum hands to the node, and each block
-  mined through it. A mined block gets its own full-screen moment in both
-  looks.
+  mined through it. A mined block gets its own full-screen moment in every
+  look.
 
 Without a stratum API the panel says how to point at one; if the API stops
 answering, the panel says so and the rest of the dashboard carries on.
@@ -284,7 +295,7 @@ found, the log file and the geolocation source.
 | `--stall-secs N` | `…_STALL_SECS` / `stall_secs` | 60 | seconds without a zone block before a stall event |
 | `--demo` | `…_DEMO` / `demo` | off | an invented node |
 | `--listen ADDR` | `…_LISTEN` / `listen` | `127.0.0.1:8090` | where `web` listens |
-| `--theme ghost\|angel` | `…_THEME` / `theme` | `ghost` | `tui`: starting look |
+| `--theme quai\|ghost\|angel` | `…_THEME` / `theme` | `quai` | starting look, in the terminal and the browser (a look picked in the browser is remembered there) |
 | `--graphics auto\|on\|off` | `…_GRAPHICS` / `graphics` | `auto` | `tui`: pixel peer map (kitty graphics protocol) |
 | `--notify` | `…_NOTIFY` / `notify` | off | `tui`: desktop notifications for alerts |
 
@@ -405,9 +416,10 @@ Nothing running as root writes inside the run-as user's home.
 
 In **kitty**, **Ghostty** and **WezTerm** (detected from `TERM`,
 `TERM_PROGRAM`, `KITTY_WINDOW_ID` or `GHOSTTY_RESOURCES_DIR`), the TUI's
-peer map is drawn in pixels with the kitty graphics protocol: the GHOST
-look gets the rotating dot globe with arcs and travelling packets, ANGEL
-gets the reticle map with its sweep. It redraws about four times a
+peer map is drawn in pixels with the kitty graphics protocol: the QUAI
+look gets a slowly turning globe inside the Quai logo's ring, the GHOST
+look the rotating dot globe with arcs and travelling packets, ANGEL the
+reticle map with its sweep. It redraws about four times a
 second and steps aside while help, flashes or the boot screen are up.
 `--graphics on|off` overrides the detection; elsewhere the map is
 braille.
@@ -433,11 +445,12 @@ header hints, or shows as unknown.
 
 ## Keys
 
-- **Web:** `T` switches the look; `C` turns full-screen moments on or
-  off. The map can be dragged to rotate. A link ending in `#angel` or
-  `#ghost` opens that look.
+- **Web:** `T` switches the look (QUAI → GHOST → ANGEL); `C` turns
+  full-screen moments on or off. The map can be dragged to rotate. A link
+  ending in `#quai`, `#ghost` or `#angel` opens that look.
 - **TUI:**
-  - `t` switches the look; `m` shows the map full screen; `s` shows the
+  - `t` switches the look (QUAI → GHOST → ANGEL); `m` shows the map
+    full screen; `s` shows the
     stratum (miners, workers, workshares) full screen; `l` shows the log
     full height.
   - `?` opens help; `q` or Esc quits.
@@ -450,7 +463,7 @@ for trying the dashboard without one, including a stratum with five
 miners and eight workers on all three algorithms.
 
 `quai-dash record --out tour.json` drives the real terminal renderer
-through a scripted tour on demo data (both looks, map, stratum, log, help) and
+through a scripted tour on demo data (all three looks, map, stratum, log, help) and
 saves the changed cells per frame; `web/tui.html` plays such a file back
 in a browser.
 
@@ -473,8 +486,12 @@ also says what quai-dash defends against. Changes are in
 
 ## License
 
-MIT (see `LICENSE`). The fonts in `web/fonts` (Barlow Condensed, Chakra
-Petch, Share Tech Mono, Shippori Mincho B1, Noto Sans JP, JetBrains
-Mono) are Google Fonts' web subsets, unmodified, under the SIL Open Font
-License 1.1: see the `OFL-*.txt` files there. The dashboard serves them
-itself and loads nothing from other sites.
+MIT (see `LICENSE`). The fonts in `web/fonts` (Bai Jamjuree, Unbounded,
+Barlow Condensed, Chakra Petch, Share Tech Mono, Shippori Mincho B1, Noto
+Sans JP, JetBrains Mono) are Google Fonts' web subsets, unmodified, under
+the SIL Open Font License 1.1: see the `OFL-*.txt` files there. The
+dashboard serves them itself and loads nothing from other sites.
+
+The Quai logo and the Quai red are Quai Network's; the QUAI look uses
+them to name the network the dashboard watches. quai-dash is not an
+official Quai Network product.

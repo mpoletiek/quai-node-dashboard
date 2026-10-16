@@ -7,6 +7,31 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **A QUAI look, now the default, in the browser and the terminal.**
+  Quai Network's own colours (the logo's red, `#E20101`, on warm browns,
+  from qu.ai) and the Quai logo, with pieces of its own rather than a
+  recoloured GHOST or ANGEL: the block timer is the logo's ring, filling
+  red over two average block times with the seconds in the middle; the
+  peer map is a globe inside the logo's ring; the proof-of-work panel is
+  a table over one chart of the three hashrates, each scaled to its own
+  range; the digits of the zone height that changed glow for a moment;
+  prime, region and mined blocks get a card in the tier's colour. In the
+  terminal the header rule burns red as the zone waits for its next
+  block. Red is the brand here, so alerts are a lighter red and always
+  carry a word (OFFLINE, ALERT, OVERDUE).
+
+### Changed
+
+- **The default look is QUAI** (was GHOST). `--theme` (`theme`,
+  `QUAI_DASH_THEME`) takes `quai`, `ghost` or `angel` and now sets the
+  browser's starting look as well as the terminal's. `t` / `T` cycles
+  QUAI → GHOST → ANGEL. The browser keeps a look you pick there and no
+  longer saves one you didn't, so earlier visitors see QUAI once.
+- `quai-dash record` tours all three looks, starting in QUAI (56 s by
+  default, was 48 s).
+
 ## [0.1.4] - 2026-10-15
 
 ### Added
