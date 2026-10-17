@@ -7,6 +7,14 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The pixel peer map no longer disappears during block cards.** In
+  kitty, Ghostty and WezTerm the map vanished whenever a prime, region
+  or mined card (or help) was up, even when the card was nowhere near
+  it. Now a card beside the map leaves it alone, and a card over it is
+  cut out of the image.
+
 ## [0.2.0] - 2026-10-16
 
 ### Added

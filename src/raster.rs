@@ -143,13 +143,25 @@ impl Canvas {
         self.line((x - r, y + r), (x - r, y - r), c, a);
     }
 
-    /// PNG (8-bit RGB: the alpha is always opaque; zlib level 1).
+    /// Makes the pixels in `x0..x1` × `y0..y1` fully transparent.
+    pub fn cut(&mut self, (x0, y0): (usize, usize), (x1, y1): (usize, usize)) {
+        for y in y0..y1.min(self.h) {
+            for x in x0..x1.min(self.w) {
+                let i = (y * self.w + x) * 4;
+                self.px[i..i + 4].copy_from_slice(&[0, 0, 0, 0]);
+            }
+        }
+    }
+
+    /// PNG (8-bit RGB, or RGBA once something was cut; zlib level 1).
     pub fn png(&self) -> Vec<u8> {
-        let mut raw = Vec::with_capacity(self.h * (self.w * 3 + 1));
+        let alpha = self.px.chunks(4).any(|p| p[3] != 255);
+        let n = if alpha { 4 } else { 3 };
+        let mut raw = Vec::with_capacity(self.h * (self.w * n + 1));
         for row in self.px.chunks(self.w * 4) {
             raw.push(0);
             for p in row.chunks(4) {
-                raw.extend_from_slice(&p[..3]);
+                raw.extend_from_slice(&p[..n]);
             }
         }
         let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
@@ -159,7 +171,7 @@ impl Canvas {
         let mut ihdr = Vec::new();
         ihdr.extend_from_slice(&(self.w as u32).to_be_bytes());
         ihdr.extend_from_slice(&(self.h as u32).to_be_bytes());
-        ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+        ihdr.extend_from_slice(&[8, if alpha { 6 } else { 2 }, 0, 0, 0]);
         chunk(&mut out, b"IHDR", &ihdr);
         chunk(&mut out, b"IDAT", &idat);
         chunk(&mut out, b"IEND", &[]);
@@ -512,6 +524,28 @@ mod tests {
             assert_eq!(rows, rgb);
         }
         assert_eq!(crc32(b"IEND"), 0xAE42_6082);
+    }
+
+    #[test]
+    fn a_cut_canvas_is_rgba() {
+        let mut cv = Canvas::new(40, 20, [9, 9, 9]);
+        cv.cut((10, 5), (50, 8));
+        assert_eq!(cv.px[(5 * 40 + 10) * 4 + 3], 0);
+        assert_eq!(cv.px[(5 * 40 + 9) * 4 + 3], 255);
+        assert_eq!(cv.px[(8 * 40 + 10) * 4 + 3], 255);
+        let png = cv.png();
+        assert_eq!(png[25], 6);
+        let idat_len = u32::from_be_bytes([png[33], png[34], png[35], png[36]]) as usize;
+        let mut raw = Vec::new();
+        let _ = std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(&png[41..41 + idat_len]),
+            &mut raw,
+        );
+        let rows: Vec<u8> = raw
+            .chunks(40 * 4 + 1)
+            .flat_map(|r| r[1..].to_vec())
+            .collect();
+        assert_eq!(rows, cv.px);
     }
 }
 
