@@ -7,6 +7,8 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-17
+
 ### Fixed
 
 - **The pixel peer map no longer disappears during block cards.** In
@@ -170,7 +172,8 @@ other local users, the network and web pages as untrusted (see
   a frozen dashboard, and both dashboards say STALE or NO SERVER instead
   of showing old data as live.
 
-[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.2...v0.1.3
