@@ -420,7 +420,8 @@ peer map is drawn in pixels with the kitty graphics protocol: the QUAI
 look gets a slowly turning globe inside the Quai logo's ring, the GHOST
 look the rotating dot globe with arcs and travelling packets, ANGEL the
 reticle map with its sweep. It redraws about four times a
-second and steps aside while help, flashes or the boot screen are up.
+second. Block cards and help drawn over it are cut out of the image, so
+the map stays up around them.
 `--graphics on|off` overrides the detection; elsewhere the map is
 braille.
 

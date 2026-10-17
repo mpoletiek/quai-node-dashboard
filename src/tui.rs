@@ -161,6 +161,8 @@ struct App {
     gfx: bool,
     /// Where the last frame left room for the pixel map.
     map_rect: std::cell::Cell<Option<Rect>>,
+    /// Cards and help the last frame drew over everything.
+    overlays: std::cell::RefCell<Vec<Rect>>,
 }
 
 /// Terminal options for the live TUI.
@@ -189,6 +191,7 @@ impl App {
             hist_key: String::new(),
             gfx: false,
             map_rect: std::cell::Cell::new(None),
+            overlays: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -315,17 +318,25 @@ pub fn run(state: Arc<Mutex<State>>, theme: Theme, opts: Options) -> Result<(), 
 struct PixelMap {
     cell: (u32, u32),
     placed: bool,
-    last: Option<(Rect, Theme)>,
+    last: Option<(Rect, Theme, Vec<Rect>)>,
 }
 
 impl PixelMap {
     fn update(&mut self, app: &App, s: &State) {
         use crate::raster::{MapColors, Pin, flat, globe, ring};
         let mut out = std::io::stdout();
-        let overlay = app.help
-            || app.tick < BOOT_TICKS
-            || app.flash.as_ref().is_some_and(|fl| app.tick < fl.until);
-        let Some(rect) = app.map_rect.get().filter(|_| !overlay) else {
+        // The image sits above the text, so cards and help over the map
+        // are cut out of it (and it steps aside if one covers it all).
+        let rect = app.map_rect.get().filter(|_| app.tick >= BOOT_TICKS);
+        let holes: Vec<Rect> = rect.map_or_else(Vec::new, |rect| {
+            app.overlays
+                .borrow()
+                .iter()
+                .map(|o| o.intersection(rect))
+                .filter(|o| !o.is_empty())
+                .collect()
+        });
+        let Some(rect) = rect.filter(|r| !holes.contains(r)) else {
             if self.placed {
                 let _ = crate::term::delete_image(&mut out, crate::term::MAP_IMAGE);
                 self.placed = false;
@@ -335,7 +346,8 @@ impl PixelMap {
         };
         // About twice a second: every image crosses the terminal (and any
         // SSH link) whole.
-        let fresh = self.last != Some((rect, app.theme));
+        let key = (rect, app.theme, holes);
+        let fresh = self.last.as_ref() != Some(&key);
         if !fresh && app.tick % 6 != 0 {
             return;
         }
@@ -373,7 +385,7 @@ impl PixelMap {
             })
             .collect();
         let t = app.tick as f64 * FRAME.as_secs_f64();
-        let img = match app.theme {
+        let mut img = match app.theme {
             Theme::Ghost => globe(
                 w,
                 h,
@@ -394,6 +406,15 @@ impl PixelMap {
                 t,
             ),
         };
+        let (cols, rows) = (usize::from(rect.width), usize::from(rect.height));
+        for o in &key.2 {
+            let x = |c: u16| usize::from(c - rect.x) * w;
+            let y = |c: u16| usize::from(c - rect.y) * h;
+            img.cut(
+                (x(o.x) / cols, y(o.y) / rows),
+                (x(o.right()).div_ceil(cols), y(o.bottom()).div_ceil(rows)),
+            );
+        }
         if crate::term::place_png(
             &mut out,
             crate::term::MAP_IMAGE,
@@ -404,7 +425,7 @@ impl PixelMap {
         .is_ok()
         {
             self.placed = true;
-            self.last = Some((rect, app.theme));
+            self.last = Some(key);
         }
     }
 }
@@ -869,6 +890,7 @@ fn kv<'a>(p: &Pal, k: &str, v: String, vc: Color) -> Line<'a> {
 
 fn draw(f: &mut Frame, app: &App, s: &State) {
     app.map_rect.set(None);
+    app.overlays.borrow_mut().clear();
     let p = pal(app.theme);
     let area = f.area();
     f.render_widget(
@@ -2717,6 +2739,7 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
                 width: w,
                 height: h,
             };
+            app.overlays.borrow_mut().push(r);
             f.render_widget(Clear, r);
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -2765,6 +2788,7 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
             let on = left % 4 < 2;
             let hue = if fl.kind == Moment::Mined { p.ok } else { p.fg };
             let (fg, bg) = if on { (p.bg, hue) } else { (hue, p.bg) };
+            app.overlays.borrow_mut().push(r);
             f.render_widget(Clear, r);
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -2794,6 +2818,7 @@ fn draw_flash(f: &mut Frame, app: &App, fl: &Flash, area: Rect) {
                 Moment::Region => p.purple,
                 Moment::Mined => p.ok,
             };
+            app.overlays.borrow_mut().push(r);
             f.render_widget(Clear, r);
             let stripe: String = (0..area.width)
                 .map(|i| {
@@ -2842,6 +2867,7 @@ fn draw_help(f: &mut Frame, app: &App, area: Rect) {
         width: w,
         height: h,
     };
+    app.overlays.borrow_mut().push(r);
     f.render_widget(Clear, r);
     let inner = panel(f, r, app, "CONTROLS", "操作");
     let lines = vec![
@@ -3158,6 +3184,42 @@ mod tests {
                     );
                 }
                 assert!(app.map_rect.get().is_none(), "the pixel map stays off");
+            }
+        }
+    }
+
+    #[test]
+    fn cards_are_overlays_on_the_pixel_map() {
+        let s = with_stratum(sample());
+        for theme in [Theme::Quai, Theme::Ghost, Theme::Angel] {
+            for (w, h, over) in [(240, 70, false), (160, 48, true)] {
+                let mut app = App::new(theme);
+                app.gfx = true;
+                app.tick = BOOT_TICKS + 3;
+                app.observe(&s);
+                app.flash = Some(Flash {
+                    until: app.tick + 5,
+                    kind: Moment::Prime,
+                    text: "Prime block 4,173,209".into(),
+                });
+                let Ok(mut term) = Terminal::new(TestBackend::new(w, h));
+                assert!(term.draw(|f| draw(f, &app, &s)).is_ok());
+                let map = app.map_rect.get();
+                assert!(
+                    map.is_some(),
+                    "{theme:?} {w}x{h}: no room for the pixel map"
+                );
+                let map = map.unwrap_or_default();
+                let cards = app.overlays.borrow().clone();
+                assert_eq!(cards.len(), 1, "{theme:?} {w}x{h}");
+                if theme != Theme::Angel {
+                    assert_eq!(
+                        cards[0].intersects(map),
+                        over,
+                        "{theme:?} {w}x{h}: card {:?}, map {map:?}",
+                        cards[0]
+                    );
+                }
             }
         }
     }
