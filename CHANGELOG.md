@@ -7,7 +7,10 @@ here becomes its release notes.
 
 ## [Unreleased]
 
-## [0.2.2] - 2026-10-19
+## [0.2.3] - 2026-10-19
+
+There is no 0.2.2: its tag went onto the wrong commit and, release tags
+being immutable here, it was never released. 0.2.3 is that release.
 
 ### Added
 
@@ -184,8 +187,8 @@ other local users, the network and web pages as untrusted (see
   a frozen dashboard, and both dashboards say STALE or NO SERVER instead
   of showing old data as live.
 
-[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.2...HEAD
-[0.2.2]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.1...v0.2.2
+[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.1...v0.2.3
 [0.2.1]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.3...v0.1.4
