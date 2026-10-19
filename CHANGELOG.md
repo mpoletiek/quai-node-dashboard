@@ -7,6 +7,16 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **The terminal remembers its look.** The look picked with `t` is where
+  the next `quai-dash tui` starts, saved in
+  `~/.local/state/quai-dash/tui-look` (`$XDG_STATE_HOME` if set), as the
+  browser already did with `T`. `--theme` or `QUAI_DASH_THEME` still
+  picks the look for that run; the config file's `theme` now applies
+  only until a look is picked. `quai-dash config` shows the look the TUI
+  will start in and why.
+
 ## [0.2.1] - 2026-10-17
 
 ### Fixed

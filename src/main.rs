@@ -16,6 +16,7 @@ mod demo;
 mod detect;
 mod geo;
 mod logs;
+mod look;
 mod peers;
 mod raster;
 mod rpc;
@@ -282,6 +283,8 @@ fn print_config(
         log_file.map_or("none".to_string(), |f| f.display().to_string())
     );
     let _ = writeln!(o, "geolocation  {geo}");
+    let (look, why) = look::starting(s);
+    let _ = writeln!(o, "tui look     {} ({why})", look.name());
     o.push('\n');
     let rows = s.rows();
     let w = rows.iter().map(|r| r.0.len()).max().unwrap_or(0);
@@ -516,7 +519,7 @@ fn run() -> Result<(), String> {
             };
             tui::run(
                 state,
-                s.v.theme.unwrap_or(Theme::Quai),
+                look::starting(&s).0,
                 tui::Options {
                     graphics,
                     kind: term,

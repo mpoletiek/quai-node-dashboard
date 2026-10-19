@@ -295,7 +295,7 @@ found, the log file and the geolocation source.
 | `--stall-secs N` | `…_STALL_SECS` / `stall_secs` | 60 | seconds without a zone block before a stall event |
 | `--demo` | `…_DEMO` / `demo` | off | an invented node |
 | `--listen ADDR` | `…_LISTEN` / `listen` | `127.0.0.1:8090` | where `web` listens |
-| `--theme quai\|ghost\|angel` | `…_THEME` / `theme` | `quai` | starting look, in the terminal and the browser (a look picked in the browser is remembered there) |
+| `--theme quai\|ghost\|angel` | `…_THEME` / `theme` | `quai` | starting look, in the terminal and the browser; each remembers the last look picked in it (see [Keys](#keys)) |
 | `--graphics auto\|on\|off` | `…_GRAPHICS` / `graphics` | `auto` | `tui`: pixel peer map (kitty graphics protocol) |
 | `--notify` | `…_NOTIFY` / `notify` | off | `tui`: desktop notifications for alerts |
 
@@ -448,7 +448,8 @@ header hints, or shows as unknown.
 
 - **Web:** `T` switches the look (QUAI → GHOST → ANGEL); `C` turns
   full-screen moments on or off. The map can be dragged to rotate. A link
-  ending in `#quai`, `#ghost` or `#angel` opens that look.
+  ending in `#quai`, `#ghost` or `#angel` opens that look. A look picked
+  with `T` is remembered in that browser.
 - **TUI:**
   - `t` switches the look (QUAI → GHOST → ANGEL); `m` shows the map
     full screen; `s` shows the
@@ -456,6 +457,11 @@ header hints, or shows as unknown.
     full height.
   - `?` opens help; `q` or Esc quits.
   - Below 100×28 the layout keeps only the essentials.
+  - The look picked with `t` is remembered for the next `quai-dash tui`,
+    in `~/.local/state/quai-dash/tui-look` (`$XDG_STATE_HOME` if set).
+    `--theme` or `QUAI_DASH_THEME` overrides it for that run; the config
+    file's `theme` applies until you pick one. `quai-dash config` shows
+    which look the TUI will start in, and why.
 
 ## Demo mode
 
