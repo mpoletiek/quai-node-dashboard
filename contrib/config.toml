@@ -41,6 +41,6 @@
 # listen = "127.0.0.1:8090"
 
 # Terminal dashboard.
-# theme = "quai"                        # quai | ghost | angel (browser too)
+# theme = "quai"                        # quai | ghost | angel (browser too; a look picked with t/T is remembered and wins)
 # graphics = "auto"                     # auto | on | off
 # notify = false

@@ -488,8 +488,12 @@ fn event_loop(
         }
         if event::poll(FRAME).map_err(|e| e.to_string())? {
             if let Event::Key(k) = event::read().map_err(|e| e.to_string())? {
+                let look = app.theme;
                 if k.kind == KeyEventKind::Press && app.key(k.code) {
                     return Ok(());
+                }
+                if app.theme != look {
+                    crate::look::remember(app.theme);
                 }
             }
         }
