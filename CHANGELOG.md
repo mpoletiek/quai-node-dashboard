@@ -7,6 +7,8 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-04
+
 ### Fixed
 
 - **A node that starts after quai-dash is found.** Detection ran once, at
@@ -198,7 +200,8 @@ other local users, the network and web pages as untrusted (see
   a frozen dashboard, and both dashboards say STALE or NO SERVER instead
   of showing old data as live.
 
-[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.1...v0.2.3
 [0.2.1]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.1.4...v0.2.0
