@@ -142,8 +142,10 @@ To keep it running, install it as a service (`--service` above, or
 No flags needed: quai-dash finds the node on the zone RPC port, tells
 rs-quai from go-quai, follows its logs, maps its peers (placed on the
 map with a local GeoIP database, see [Geolocation](#geolocation)) and, if the node runs a
-stratum, shows its miners. Everything it detects can be overridden, and
-every option can live in a [config file](#configuration).
+stratum, shows its miners. A node that starts after quai-dash (both at
+boot, say) is found when it comes up: while anything detectable is still
+missing, quai-dash looks again every 15 s. Everything it detects can be
+overridden, and every option can live in a [config file](#configuration).
 
 ## What it shows
 

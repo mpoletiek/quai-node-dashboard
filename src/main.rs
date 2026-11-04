@@ -15,6 +15,7 @@ mod config;
 mod demo;
 mod detect;
 mod geo;
+mod late;
 mod logs;
 mod look;
 mod peers;
@@ -476,6 +477,32 @@ fn run() -> Result<(), String> {
         for n in &d.notes {
             say(format!("quai-dash: note: {n}"));
         }
+        // What detection could still find, if the node starts later.
+        let gaps = late::Gaps {
+            kind: kind == NodeKind::Unknown,
+            logs: s.v.logs.is_none(),
+            stratum: s.v.stratum_api.is_none(),
+        };
+        let late_stratum = if gaps.any() {
+            say(format!(
+                "quai-dash: looking again every {} s for: {}",
+                late::EVERY.as_secs(),
+                gaps.names()
+            ));
+            let (tx, rx) = std::sync::mpsc::channel();
+            let w = late::Watch {
+                zone: zone.clone(),
+                gaps,
+                kind,
+                pid: s.v.node_pid.filter(|_| s.explicit("node_pid")),
+                stratum: tx,
+            };
+            let st = state.clone();
+            std::thread::spawn(move || late::run(w, st));
+            Some(rx)
+        } else {
+            None
+        };
         let cfg = collect::Config {
             label: s.v.label.clone().unwrap_or_default(),
             explorer: explorer_base(s.v.explorer.as_deref()),
@@ -489,6 +516,7 @@ fn run() -> Result<(), String> {
             here,
             stall_secs: s.v.stall_secs.unwrap_or(60),
             stratum,
+            late_stratum,
             // A PID the user gave pins the peer map; a detected one would
             // go stale when the node restarts, so the port is asked again.
             pid: s.v.node_pid.filter(|_| s.explicit("node_pid")),

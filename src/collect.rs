@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -45,6 +46,9 @@ pub struct Config {
     pub stall_secs: u64,
     /// The node's stratum API.
     pub stratum: Option<Endpoint>,
+    /// A stratum API found after the start (see `late`), for when
+    /// `stratum` is `None`.
+    pub late_stratum: Option<Receiver<Endpoint>>,
     /// The node's PID, when pinned (otherwise found through the zone port).
     pub pid: Option<u32>,
 }
@@ -266,6 +270,9 @@ pub fn run(mut cfg: Config, state: Arc<Mutex<State>>) {
     loop {
         let started = Instant::now();
         let now = now_ms();
+        if cfg.stratum.is_none() {
+            cfg.stratum = cfg.late_stratum.as_ref().and_then(|rx| rx.try_recv().ok());
+        }
         // Zone head and new blocks.
         match cfg.zone.call("quai_blockNumber", json!([])) {
             Ok(v) => {
