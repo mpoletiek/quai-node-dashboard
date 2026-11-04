@@ -7,6 +7,17 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A node that starts after quai-dash is found.** Detection ran once, at
+  startup, so a quai-dash started first (as a service at boot, say)
+  showed an unknown node with no logs and no stratum API until it was
+  restarted. While the node kind, logs or stratum API is still missing
+  (and not set), quai-dash now looks again every 15 s and picks up what
+  it finds: it follows the logs, polls the stratum, and logs and shows a
+  "Found later" event. Settings that were set or already detected never
+  change.
+
 ## [0.2.3] - 2026-10-19
 
 There is no 0.2.2: its tag went onto the wrong commit and, release tags
