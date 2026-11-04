@@ -7,6 +7,15 @@ here becomes its release notes.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-11-04
+
+### Changed
+
+- **Build tooling only; quai-dash itself is unchanged from 0.2.4.** CI
+  and the release builds use Swatinem/rust-cache 2.9.3 and
+  taiki-e/install-action 2.87.32, still pinned by commit. The release's
+  third-party licence list is made by the same cargo-about (0.9.2).
+
 ## [0.2.4] - 2026-11-04
 
 ### Fixed
@@ -200,7 +209,8 @@ other local users, the network and web pages as untrusted (see
   a frozen dashboard, and both dashboards say STALE or NO SERVER instead
   of showing old data as live.
 
-[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.1...v0.2.3
 [0.2.1]: https://github.com/mpoletiek/quai-node-dashboard/compare/v0.2.0...v0.2.1
